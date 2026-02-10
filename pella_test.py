@@ -107,21 +107,36 @@ def run_test():
             sb.click('div:contains("nztz")')
             sb.sleep(5)
             
-            # 2. 提取到期时间 (兼容 天/小时/分钟)
-            expiry_info = "获取失败"
+            # 2. 全单位时间提取逻辑 (增强容错版)
+            expiry_info = "未知"
             try:
+                # 延长等待时间，确保翻译后的文字已渲染
+                sb.sleep(5) 
+                # 抓取包含时间信息的整个容器文本
                 full_text = sb.get_text('div.max-h-full.overflow-auto')
-                # 正则匹配 1天22小时28分钟 这种格式
-                match = re.search(r'(?:(\d+)\s*天)?\s*(?:(\d+)\s*小时)?\s*(?:(\d+)\s*分钟)?', full_text)
-                if match:
-                    parts = []
-                    if match.group(1): parts.append(f"{match.group(1)}天")
-                    if match.group(2): parts.append(f"{match.group(2)}小时")
-                    if match.group(3): parts.append(f"{match.group(3)}分钟")
-                    expiry_info = "".join(parts) if parts else "格式解析失败"
-                logger.info(f"🕒 提取到剩余时间: {expiry_info}")
-            except Exception as e: logger.warning(f"时间提取失败: {e}")
+                logger.info(f"📄 原始页面文本: {full_text}")
 
+                # 更加宽松的正则匹配：允许任意数量的空格和换行
+                d_match = re.search(r'(\d+)\s*天', full_text)
+                h_match = re.search(r'(\d+)\s*小时', full_text)
+                m_match = re.search(r'(\d+)\s*分钟', full_text)
+
+                parts = []
+                if d_match: parts.append(f"{d_match.group(1)}天")
+                if h_match: parts.append(f"{h_match.group(1)}小时")
+                if m_match: parts.append(f"{m_match.group(1)}分钟")
+                
+                if parts:
+                    expiry_info = "".join(parts)
+                else:
+                    # 备选方案：尝试匹配纯数字组合 (防止翻译导致单位丢失)
+                    nums = re.findall(r'\d+', full_text)
+                    if len(nums) >= 2:
+                        expiry_info = f"约 {nums[0]}小时{nums[1]}分钟"
+                
+                logger.info(f"🕒 最终提取状态: {expiry_info}")
+            except Exception as e:
+                logger.warning(f"时间提取异常: {e}")
             # 3. 按钮点击
             target_btn = 'a[href*="tpi.li/FSfV"]'
             if sb.is_element_visible(target_btn):
