@@ -84,108 +84,98 @@ def run_test():
             sb.type('input[data-input-otp="true"]', auth_code)
             sb.sleep(10)
 
-            # --- 第二阶段: 检查 Pella 状态 ---
+            # --- 第二阶段: 检查 Pella 初始状态 ---
             sb.uc_open_with_reconnect(target_server_url, 10)
             sb.sleep(8) 
-            expiry_info = "未知"
+            expiry_info_before = "未知"
             try:
                 full_text = sb.get_text('div.max-h-full.overflow-auto')
                 d = re.search(r'(\d+)\s*天', full_text)
                 h = re.search(r'(\d+)\s*小时', full_text)
                 m = re.search(r'(\d+)\s*分钟', full_text)
                 parts = [f"{d.group(1)}天 " if d else "", f"{h.group(1)}小时 " if h else "", f"{m.group(1)}分钟" if m else ""]
-                expiry_info = "".join(parts).strip()
+                expiry_info_before = "".join(parts).strip()
             except: pass
 
             target_btn_in_pella = 'a[href*="tpi.li/FSfV"]'
             if sb.is_element_visible(target_btn_in_pella):
                 btn_class = sb.get_attribute(target_btn_in_pella, "class")
                 if "opacity-50" in btn_class or "pointer-events-none" in btn_class:
-                    send_tg_notification("保活报告 (冷却中) 🕒", f"按钮尚在冷却。剩余时间: {expiry_info}", None)
+                    send_tg_notification("保活报告 (冷却中) 🕒", f"按钮尚在冷却。剩余时间: {expiry_info_before}", None)
                     return 
 
-            # --- 第三阶段: 进入续期网站点击第一个 Continue ---
+            # --- 第三阶段: 续期网站操作 (包含你验证过的必过逻辑) ---
             logger.info(f"跳转至续期网站: {renew_url}")
             sb.uc_open_with_reconnect(renew_url, 10)
             sb.sleep(5)
             
-            logger.info("执行第一个 Continue 强力点击...")
+            # 1. 第一个 Continue
             for i in range(5):
-                try:
-                    if sb.is_element_visible('button#submit-button[data-ref="first"]'):
-                        sb.js_click('button#submit-button[data-ref="first"]')
-                        sb.sleep(3)
-                        if len(sb.driver.window_handles) > 1:
-                            sb.driver.switch_to.window(sb.driver.window_handles[0])
-                        if not sb.is_element_visible('button#submit-button[data-ref="first"]'):
-                            break
-                except: pass
+                if sb.is_element_visible('button#submit-button[data-ref="first"]'):
+                    sb.js_click('button#submit-button[data-ref="first"]')
+                    sb.sleep(3)
+                    if len(sb.driver.window_handles) > 1: sb.driver.switch_to.window(sb.driver.window_handles[0])
+                    if not sb.is_element_visible('button#submit-button[data-ref="first"]'): break
 
-            # --- 第四阶段: 处理 Cloudflare 人机挑战 (Kata 模式 - 已验证有效) ---
-            logger.info("检测人机验证中...")
+            # 2. Kata 模式过人机
             sb.sleep(5)
             try:
                 cf_iframe = 'iframe[src*="cloudflare"]'
                 if sb.is_element_visible(cf_iframe):
-                    logger.info("发现 CF 验证，尝试 Kata 模式穿透...")
                     sb.switch_to_frame(cf_iframe)
                     sb.click('span.mark') 
                     sb.switch_to_parent_frame()
                     sb.sleep(6)
-                else:
-                    sb.uc_gui_click_captcha()
             except: pass
 
-            # --- 第五阶段: 强力点击 "I am not a robot" ---
-            logger.info("开始点击 'I am not a robot' (data-ref='captcha')...")
+            # 3. "I am not a robot"
             captcha_btn = 'button#submit-button[data-ref="captcha"]'
-            for i in range(8): 
-                try:
-                    if sb.is_element_visible(captcha_btn):
-                        sb.js_click(captcha_btn)
-                        sb.sleep(3)
-                        if len(sb.driver.window_handles) > 1:
-                            curr = sb.driver.current_window_handle
-                            for handle in sb.driver.window_handles:
-                                if handle != curr:
-                                    sb.driver.switch_to.window(handle)
-                                    sb.driver.close()
-                            sb.driver.switch_to.window(sb.driver.window_handles[0])
-                        if not sb.is_element_visible(captcha_btn):
-                            break
-                except: pass
+            for i in range(5):
+                if sb.is_element_visible(captcha_btn):
+                    sb.js_click(captcha_btn)
+                    sb.sleep(3)
+                    if len(sb.driver.window_handles) > 1:
+                        curr = sb.driver.current_window_handle
+                        for h in sb.driver.window_handles:
+                            if h != curr: sb.driver.switch_to.window(h); sb.driver.close()
+                        sb.driver.switch_to.window(sb.driver.window_handles[0])
+                    if not sb.is_element_visible(captcha_btn): break
 
-            # --- 第六阶段: 等待 15s 计时并点击最终 Go 按钮 ---
+            # 4. 等待 15s 并点击最终 Go
             logger.info("等待 18 秒计时结束...")
             sb.sleep(18)
-            
             final_btn = 'button#submit-button[data-ref="show"]'
-            click_final = False
             for i in range(8):
-                try:
-                    if sb.is_element_visible(final_btn):
-                        logger.info(f"第 {i+1} 次点击最终 Go 按钮...")
-                        sb.js_click(final_btn)
-                        sb.sleep(3)
-                        # 清理可能弹出的最后广告
-                        if len(sb.driver.window_handles) > 1:
-                            curr = sb.driver.current_window_handle
-                            for h in sb.driver.window_handles:
-                                if h != curr: sb.driver.switch_to.window(h); sb.driver.close()
-                            sb.driver.switch_to.window(sb.driver.window_handles[0])
-                        
-                        if not sb.is_element_visible(final_btn):
-                            click_final = True
-                            break
-                except: pass
-            
+                if sb.is_element_visible(final_btn):
+                    sb.js_click(final_btn)
+                    sb.sleep(3)
+                    if len(sb.driver.window_handles) > 1:
+                        curr = sb.driver.current_window_handle
+                        for h in sb.driver.window_handles:
+                            if h != curr: sb.driver.switch_to.window(h); sb.driver.close()
+                        sb.driver.switch_to.window(sb.driver.window_handles[0])
+                    if not sb.is_element_visible(final_btn): break
+
+            # --- 第四阶段: 返回 Pella 验证结果 ---
+            logger.info("操作完成，等待 5 秒后返回 Pella 验证结果...")
             sb.sleep(5)
-            sb.save_screenshot("final_status.png")
+            sb.uc_open_with_reconnect(target_server_url, 10)
+            sb.sleep(8) # 等待页面刷新出最新时间
             
-            if click_final:
-                send_tg_notification("续期成功 ✅", f"全流程完成（包含人机穿透与最终跳转）。操作前剩余: {expiry_info}", "final_status.png")
-            else:
-                send_tg_notification("操作反馈 ⚠️", f"流程已执行至最后，请检查截图确认跳转。剩余: {expiry_info}", "final_status.png")
+            sb.save_screenshot("pella_final_result.png")
+            
+            # 提取更新后的时间用于报告
+            expiry_info_after = "获取失败"
+            try:
+                full_text = sb.get_text('div.max-h-full.overflow-auto')
+                d = re.search(r'(\d+)\s*天', full_text)
+                h = re.search(r'(\d+)\s*小时', full_text)
+                m = re.search(r'(\d+)\s*分钟', full_text)
+                parts = [f"{d.group(1)}天 " if d else "", f"{h.group(1)}小时 " if h else "", f"{m.group(1)}分钟" if m else ""]
+                expiry_info_after = "".join(parts).strip()
+            except: pass
+
+            send_tg_notification("续期成功 ✅", f"初始时间: {expiry_info_before}\n最新时间: {expiry_info_after}", "pella_final_result.png")
 
         except Exception as e:
             sb.save_screenshot("error.png")
