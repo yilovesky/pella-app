@@ -59,7 +59,7 @@ def get_pella_code(mail_address, app_password):
     except Exception as e: return None
 
 # ==========================================
-# 3. Pella 自动化流程
+# 3. Pella 自动化流程 (优化时间提取)
 # ==========================================
 def run_test():
     email_addr = os.environ.get("PELLA_EMAIL")
@@ -130,11 +130,11 @@ def run_test():
                     sb.js_click('button#submit-button[data-ref="first"]')
                     sb.sleep(3)
                     
-                    # --- 核心修复：获取当前 URL 并传给脚本 ---
+                    # --- 核心修改：改为调用 bypass.py 并传入当前 URL ---
                     current_page_url = sb.get_current_url()
-                    logger.info(f"检测到人机验证，正在调用 simple_bypass.py 处理 URL: {current_page_url}")
-                    os.system(f"python simple_bypass.py {current_page_url}")
-                    # ------------------------------------
+                    logger.info(f"检测到人机验证，正在调用 bypass.py 处理 URL: {current_page_url}")
+                    os.system(f"python bypass.py {current_page_url}")
+                    # -----------------------------------------------
                     
                     if len(sb.driver.window_handles) > 1: sb.driver.switch_to.window(sb.driver.window_handles[0])
                     if not sb.is_element_visible('button#submit-button[data-ref="first"]'): break
