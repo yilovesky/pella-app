@@ -85,23 +85,32 @@ def run_test():
             sb.type('input[data-input-otp="true"]', auth_code)
             sb.sleep(10)
 
-            # --- 第二阶段: 检查 Pella 状态 ---
+            # --- 第二阶段: 检查 Pella 状态 (使用指定 JS 逻辑) ---
             logger.info("🔍 [面板监控] 正在检查服务器初始状态...")
             sb.uc_open_with_reconnect(target_server_url, 10)
-            sb.sleep(8) 
+            sb.sleep(10) 
             
-            # 封装提取逻辑以便后续复用
-            def get_expiry_info(sb_obj):
+            def get_expiry_time_raw(sb_obj):
                 try:
-                    full_text = sb_obj.get_text('div.max-h-full.overflow-auto')
-                    d = re.search(r'(\d+)\s*天', full_text)
-                    h = re.search(r'(\d+)\s*小时', full_text)
-                    m = re.search(r'(\d+)\s*分钟', full_text)
-                    parts = [f"{d.group(1)}天 " if d else "", f"{h.group(1)}小时 " if h else "", f"{m.group(1)}分钟" if m else ""]
-                    return "".join(parts).strip()
+                    # 严格按照您提供的 JS 提取逻辑
+                    js_code = """
+                    var divs = document.querySelectorAll('div');
+                    for (var d of divs) {
+                        var txt = d.innerText;
+                        if (txt.includes('expiring') && (txt.includes('Day') || txt.includes('Hours') || txt.includes('天'))) {
+                            return txt;
+                        }
+                    }
+                    return "未找到时间文本";
+                    """
+                    raw_text = sb_obj.execute_script(js_code)
+                    clean_text = " ".join(raw_text.split())
+                    if "expiring in" in clean_text:
+                        return clean_text.split("expiring in")[1].split(".")[0].strip()
+                    return clean_text[:60]
                 except: return "获取失败"
 
-            expiry_before = get_expiry_info(sb)
+            expiry_before = get_expiry_time_raw(sb)
             logger.info(f"🕒 [面板监控] 续期前剩余时间: {expiry_before}")
 
             target_btn_in_pella = 'a[href*="tpi.li/FSfV"]'
@@ -163,7 +172,7 @@ def run_test():
                             break
                 except: pass
 
-            # --- 第六阶段: 等待 15s 计时并点击最终 Go 按钮 ---
+            # --- 第六阶段: 等待 计时并点击最终 Go 按钮 ---
             logger.info("⌛ [面板监控] 等待 18 秒计时结束...")
             sb.sleep(18)
             
@@ -186,20 +195,20 @@ def run_test():
                             break
                 except: pass
             
-            # --- 第七阶段: 结果验证 (面板监控日志) ---
+            # --- 第七阶段: 结果验证 (使用指定 JS 逻辑) ---
+            logger.info("🏁 [面板监控] 操作完成，正在回访 Pella 验证续期结果...")
+            sb.sleep(5)
+            sb.uc_open_with_reconnect(target_server_url, 10)
+            sb.sleep(10)
+            
+            expiry_after = get_expiry_time_raw(sb)
+            logger.info(f"🕒 [面板监控] 续期后剩余时间: {expiry_after}")
+            sb.save_screenshot("final_result.png")
+            
             if click_final:
-                logger.info("🏁 [面板监控] 操作完成，正在回访 Pella 验证续期结果...")
-                sb.sleep(10)
-                sb.uc_open_with_reconnect(target_server_url, 10)
-                sb.sleep(8)
-                expiry_after = get_expiry_info(sb)
-                logger.info(f"🕒 [面板监控] 续期后剩余时间: {expiry_after}")
-                sb.save_screenshot("final_result.png")
                 send_tg_notification("续期成功 ✅", f"续期前: {expiry_before}\n续期后: {expiry_after}", "final_result.png")
             else:
-                sb.save_screenshot("final_status.png")
-                logger.warning("⚠️ [面板监控] 最终按钮点击未确认，请检查截图。")
-                send_tg_notification("操作反馈 ⚠️", f"流程已执行至最后，请检查截图确认跳转。操作前: {expiry_before}", "final_status.png")
+                send_tg_notification("操作反馈 ⚠️", f"流程已执行至最后，请检查截图。续期前: {expiry_before}\n当前时间: {expiry_after}", "final_result.png")
 
         except Exception as e:
             logger.error(f"🔥 [面板监控] 流程崩溃: {str(e)}")
