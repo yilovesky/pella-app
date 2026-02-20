@@ -64,8 +64,7 @@ def get_pella_code(mail_address, app_password):
 def run_test():
     email_addr = os.environ.get("PELLA_EMAIL")
     app_pw = os.environ.get("GMAIL_APP_PASSWORD")
-    target_server_url = "https://www.pella.app/server/2b3bbeef0eeb452299a11e431c3c2d5b"
-    renew_url = "https://cuty.io/m4w0wJrEmgEC"
+    target_server_url = "https://www.pella.app/server/3609ece276a7473bba79f75fd897aa78"
     
     with SB(uc=True, xvfb=True) as sb:
         try:
@@ -92,7 +91,6 @@ def run_test():
             
             def get_expiry_time_raw(sb_obj):
                 try:
-                    # 严格按照您提供的 JS 提取逻辑
                     js_code = """
                     var divs = document.querySelectorAll('div');
                     for (var d of divs) {
@@ -113,30 +111,26 @@ def run_test():
             expiry_before = get_expiry_time_raw(sb)
             logger.info(f"🕒 [面板监控] 续期前剩余时间: {expiry_before}")
 
-            target_btn_in_pella = 'a[href*="tpi.li/FSfV"]'
-            if sb.is_element_visible(target_btn_in_pella):
-                btn_class = sb.get_attribute(target_btn_in_pella, "class")
+            # 根据你提供的截图，按钮的 href 包含 cuty.io
+            target_btn_selector = 'a[href*="cuty.io"]'
+            
+            if sb.is_element_visible(target_btn_selector):
+                btn_class = sb.get_attribute(target_btn_selector, "class")
+                # 检查是否冷却中
                 if "opacity-50" in btn_class or "pointer-events-none" in btn_class:
                     logger.warning("🕒 [面板监控] 按钮处于冷却中，任务结束。")
                     send_tg_notification("保活报告 (冷却中) 🕒", f"按钮尚在冷却。剩余时间: {expiry_before}", None)
                     return 
 
-            # --- 第三阶段: 进入续期网站点击第一个 Continue ---
-            logger.info(f"🚀 [面板监控] 跳转至续期网站: {renew_url}")
-            sb.uc_open_with_reconnect(renew_url, 10)
-            sb.sleep(5)
+            # --- 第三阶段: 获取动态网址并跳转 ---
+            logger.info("🖱️ [面板监控] 正在从页面抓取动态续期链接...")
+            # 直接从 DOM 中提取 href 属性值
+            dynamic_renew_url = sb.get_attribute(target_btn_selector, "href")
+            logger.info(f"🔗 [面板监控] 成功识别续期网址: {dynamic_renew_url}")
             
-            logger.info("🖱️ [面板监控] 执行第一个 Continue 强力点击...")
-            for i in range(5):
-                try:
-                    if sb.is_element_visible('button#submit-button[data-ref="first"]'):
-                        sb.js_click('button#submit-button[data-ref="first"]')
-                        sb.sleep(3)
-                        if len(sb.driver.window_handles) > 1:
-                            sb.driver.switch_to.window(sb.driver.window_handles[0])
-                        if not sb.is_element_visible('button#submit-button[data-ref="first"]'):
-                            break
-                except: pass
+            # 使用提取到的网址进行跳转
+            sb.uc_open_with_reconnect(dynamic_renew_url, 10)
+            sb.sleep(5)
 
             # --- 第四阶段: 处理 Cloudflare 人机挑战 (Kata 模式 - 已验证有效) ---
             logger.info("🛡️ [面板监控] 检测人机验证中...")
@@ -172,7 +166,7 @@ def run_test():
                             break
                 except: pass
 
-            # --- 第六阶段: 等待 计时并点击最终 Go 按钮 ---
+            # --- 第六阶段: 等待 18 秒计时并点击最终 Go 按钮 ---
             logger.info("⌛ [面板监控] 等待 18 秒计时结束...")
             sb.sleep(18)
             
@@ -195,7 +189,7 @@ def run_test():
                             break
                 except: pass
             
-            # --- 第七阶段: 结果验证 (使用指定 JS 逻辑) ---
+            # --- 第七阶段: 结果验证 ---
             logger.info("🏁 [面板监控] 操作完成，正在回访 Pella 验证续期结果...")
             sb.sleep(5)
             sb.uc_open_with_reconnect(target_server_url, 10)
