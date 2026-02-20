@@ -68,7 +68,7 @@ def run_test():
     
     with SB(uc=True, xvfb=True) as sb:
         try:
-            # --- 第一阶段: 登录与状态识别 (面板监控日志) ---
+            # --- 第一阶段: 登录与状态识别 ---
             logger.info("🚀 [面板监控] 正在启动 Pella 登录流程...")
             sb.uc_open_with_reconnect("https://www.pella.app/login", 10)
             sb.sleep(5)
@@ -84,7 +84,7 @@ def run_test():
             sb.type('input[data-input-otp="true"]', auth_code)
             sb.sleep(10)
 
-            # --- 第二阶段: 检查 Pella 状态 (使用指定 JS 逻辑) ---
+            # --- 第二阶段: 检查 Pella 状态 ---
             logger.info("🔍 [面板监控] 正在检查服务器初始状态...")
             sb.uc_open_with_reconnect(target_server_url, 10)
             sb.sleep(10) 
@@ -111,28 +111,28 @@ def run_test():
             expiry_before = get_expiry_time_raw(sb)
             logger.info(f"🕒 [面板监控] 续期前剩余时间: {expiry_before}")
 
-            # 根据你提供的截图，按钮的 href 包含 cuty.io
             target_btn_selector = 'a[href*="cuty.io"]'
             
             if sb.is_element_visible(target_btn_selector):
                 btn_class = sb.get_attribute(target_btn_selector, "class")
-                # 检查是否冷却中
-                if "opacity-50" in btn_class or "pointer-events-none" in btn_class:
+                # 【关键修正】：使用更严格的过滤逻辑，排除掉包含 'disabled:' 的干扰项
+                # 只有当按钮 class 包含 'opacity-50' 且不带 'disabled:' 前缀时，才认为是冷却中
+                is_cooling = "opacity-50" in btn_class and "disabled:opacity-50" not in btn_class
+                
+                if is_cooling or "pointer-events-none" in btn_class:
                     logger.warning("🕒 [面板监控] 按钮处于冷却中，任务结束。")
                     send_tg_notification("保活报告 (冷却中) 🕒", f"按钮尚在冷却。剩余时间: {expiry_before}", None)
                     return 
 
             # --- 第三阶段: 获取动态网址并跳转 ---
             logger.info("🖱️ [面板监控] 正在从页面抓取动态续期链接...")
-            # 直接从 DOM 中提取 href 属性值
             dynamic_renew_url = sb.get_attribute(target_btn_selector, "href")
             logger.info(f"🔗 [面板监控] 成功识别续期网址: {dynamic_renew_url}")
             
-            # 使用提取到的网址进行跳转
             sb.uc_open_with_reconnect(dynamic_renew_url, 10)
             sb.sleep(5)
 
-            # --- 第四阶段: 处理 Cloudflare 人机挑战 (Kata 模式 - 已验证有效) ---
+            # --- 第四阶段: 处理 Cloudflare 人机挑战 ---
             logger.info("🛡️ [面板监控] 检测人机验证中...")
             sb.sleep(5)
             try:
@@ -181,7 +181,7 @@ def run_test():
                         if len(sb.driver.window_handles) > 1:
                             curr = sb.driver.current_window_handle
                             for h in sb.driver.window_handles:
-                                if h != curr: sb.driver.switch_to.window(h); sb.driver.close()
+                                if handle != curr: sb.driver.switch_to.window(h); sb.driver.close()
                             sb.driver.switch_to.window(sb.driver.window_handles[0])
                         
                         if not sb.is_element_visible(final_btn):
