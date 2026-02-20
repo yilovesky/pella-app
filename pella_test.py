@@ -147,12 +147,27 @@ def run_test():
                     sb.uc_gui_click_captcha()
             except: pass
 
+            # 【新增逻辑】：清理阻碍点击的广告弹窗
+            def clean_ads(sb_obj):
+                try:
+                    # 移除 ID 以 div_netpub_ins_ 开头的广告容器
+                    js_cleanup = """
+                    var ads = document.querySelectorAll('div[id^="div_netpub_ins_"]');
+                    ads.forEach(function(ad) { ad.remove(); });
+                    var iframes = document.querySelectorAll('iframe[id^="adg-"]');
+                    iframes.forEach(function(f) { f.remove(); });
+                    document.body.style.overflow = 'auto';
+                    """
+                    sb_obj.execute_script(js_cleanup)
+                except: pass
+
             # --- 第五阶段: 强力点击 "I am not a robot" ---
             logger.info("🖱️ [面板监控] 开始点击 'I am not a robot' (data-ref='captcha')...")
             captcha_btn = 'button#submit-button[data-ref="captcha"]'
             for i in range(8): 
                 try:
                     if sb.is_element_visible(captcha_btn):
+                        clean_ads(sb) # 点击前清理广告
                         sb.js_click(captcha_btn)
                         sb.sleep(3)
                         if len(sb.driver.window_handles) > 1:
@@ -175,13 +190,14 @@ def run_test():
             for i in range(8):
                 try:
                     if sb.is_element_visible(final_btn):
+                        clean_ads(sb) # 点击前清理广告
                         logger.info(f"🖱️ [面板监控] 第 {i+1} 次点击最终 Go 按钮...")
                         sb.js_click(final_btn)
                         sb.sleep(3)
                         if len(sb.driver.window_handles) > 1:
                             curr = sb.driver.current_window_handle
                             for h in sb.driver.window_handles:
-                                if handle != curr: sb.driver.switch_to.window(h); sb.driver.close()
+                                if h != curr: sb.driver.switch_to.window(h); sb.driver.close()
                             sb.driver.switch_to.window(sb.driver.window_handles[0])
                         
                         if not sb.is_element_visible(final_btn):
