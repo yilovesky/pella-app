@@ -28,15 +28,17 @@ def send_tg_notification(status, message, photo_path=None):
     except Exception as e: logger.error(f"TG通知失败: {e}")
 
 # ==========================================
-# 2. Gmail 验证码提取 (锁死不改)
+# 2. Gmail 验证码提取 (增强尝试次数)
 # ==========================================
 def get_pella_code(mail_address, app_password):
-    logger.info("📡 正在连接 Gmail 抓取验证码...")
+    logger.info("📡 正在连接 Gmail 抓取验证码 (增强模式: 最多等待20轮)...")
     try:
         mail = imaplib.IMAP4_SSL("imap.gmail.com")
         mail.login(mail_address, app_password)
         mail.select("inbox")
-        for i in range(10):
+        # 循环次数从 10 增加到 20，确保邮件延迟也能抓到
+        for i in range(20):
+            logger.info(f"📩 正在进行第 {i+1}/20 轮邮件检索...")
             status, messages = mail.search(None, '(FROM "Pella" UNSEEN)')
             if status == "OK" and messages[0]:
                 latest_msg_id = messages[0].split()[-1]
@@ -53,10 +55,15 @@ def get_pella_code(mail_address, app_password):
                 code = re.search(r'\b\d{6}\b', content)
                 if code:
                     mail.store(latest_msg_id, '+FLAGS', '\\Seen')
+                    logger.info(f"✅ 成功抓取验证码: {code.group()}")
                     return code.group()
-            time.sleep(10)
+            # 每次没搜到，等待 12 秒
+            time.sleep(12)
+        logger.error("❌ 在指定轮次内未收到 Pella 验证邮件")
         return None
-    except Exception as e: return None
+    except Exception as e: 
+        logger.error(f"📧 邮件连接异常: {e}")
+        return None
 
 # ==========================================
 # 3. Pella 自动化流程
@@ -87,9 +94,9 @@ def run_test():
             sb.press_keys("#identifier-field", "\n")
             sb.sleep(5)
             
+            # 这里调用了增强后的验证码抓取
             auth_code = get_pella_code(email_addr, app_pw)
-            if not auth_code: raise Exception("验证码抓取失败")
-            logger.info(f"🔢 [面板监控] 抓取到验证码: {auth_code}")
+            if not auth_code: raise Exception("验证码抓取失败 (超时)")
             
             sb.type('input[data-input-otp="true"]', auth_code)
             sb.sleep(10)
@@ -146,7 +153,7 @@ def run_test():
             sb.save_screenshot("step5_renew_url_opened.png")
             send_tg_notification("进度日志 📸", "已打开续期跳转链接", "step5_renew_url_opened.png")
 
-            # --- 新增/补回：执行第一个 Continue 强力点击 ---
+            # --- 第一个 Continue 强力点击 ---
             logger.info("🖱️ [面板监控] 执行第一个 Continue 强力点击...")
             for i in range(5):
                 try:
