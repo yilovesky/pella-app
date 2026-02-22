@@ -72,7 +72,6 @@ def run_test():
             sb.uc_open_with_reconnect("https://www.pella.app/login", 10)
             sb.sleep(5)
             sb.save_screenshot("step1_login_page.png")
-            send_tg_notification("进度日志 📸", "已打开登录页面", "step1_login_page.png")
 
             sb.uc_gui_click_captcha()
             logger.info("🖱️ [面板监控] 已点击登录页 Captcha")
@@ -81,7 +80,6 @@ def run_test():
                 sb.add_text("#identifier-field", char)
                 time.sleep(0.1)
             sb.save_screenshot("step2_input_email.png")
-            send_tg_notification("进度日志 📸", "已输入邮箱地址", "step2_input_email.png")
             
             sb.press_keys("#identifier-field", "\n")
             sb.sleep(5)
@@ -109,14 +107,12 @@ def run_test():
             
             logger.info(f"✅ [面板监控] 自动识别到服务器地址: {target_server_url}")
             sb.save_screenshot("step3_after_login_scan.png")
-            send_tg_notification("进度日志 📸", f"登录成功，自动扫到服务器: {target_server_url}", "step3_after_login_scan.png")
 
             # --- 第二阶段: 检查 Pella 状态 ---
             logger.info("🔍 [面板监控] 正在进入识别到的服务器面板...")
             sb.uc_open_with_reconnect(target_server_url, 10)
             sb.sleep(10) 
             sb.save_screenshot("step4_server_dashboard.png")
-            send_tg_notification("进度日志 📸", "已进入服务器控制面板", "step4_server_dashboard.png")
             
             def get_expiry_time_raw(sb_obj):
                 try:
@@ -171,7 +167,6 @@ def run_test():
                             break
 
             sb.save_screenshot("step5_renew_url_opened.png")
-            send_tg_notification("进度日志 📸", "已通过点击进入续期页面", "step5_renew_url_opened.png")
 
             logger.info("🖱️ [面板监控] 执行第一个 Continue 强力点击...")
             for i in range(5):
@@ -179,7 +174,6 @@ def run_test():
                     if sb.is_element_visible('button#submit-button[data-ref="first"]'):
                         # 新增截图取证
                         sb.save_screenshot("action_click_first_continue.png")
-                        send_tg_notification("动作日志 📸", f"正在尝试第 {i+1} 次点击第一个 Continue", "action_click_first_continue.png")
                         
                         sb.js_click('button#submit-button[data-ref="first"]')
                         sb.sleep(3)
@@ -202,7 +196,6 @@ def run_test():
                     sb.switch_to_parent_frame()
                     sb.sleep(6)
                     sb.save_screenshot("step6_after_cf.png")
-                    send_tg_notification("进度日志 📸", "已尝试点击 CF 验证", "step6_after_cf.png")
                 else:
                     sb.uc_gui_click_captcha()
             except: pass
@@ -238,7 +231,6 @@ def run_test():
                             sb.driver.switch_to.window(sb.driver.window_handles[0])
                         if not sb.is_element_visible(captcha_btn):
                             sb.save_screenshot("step7_robot_clicked.png")
-                            send_tg_notification("进度日志 📸", "成功点击 Robot 按钮", "step7_robot_clicked.png")
                             break
                 except: pass
 
@@ -246,7 +238,6 @@ def run_test():
             logger.info("⌛ [面板监控] 等待 18 秒计时结束...")
             sb.sleep(18)
             sb.save_screenshot("step8_wait_timer.png")
-            send_tg_notification("进度日志 📸", "18秒倒计时结束，准备点击最终按钮", "step8_wait_timer.png")
             
             final_btn = 'button#submit-button[data-ref="show"]'
             click_final = False
@@ -262,7 +253,6 @@ def run_test():
                         
                         # 新增截图取证
                         sb.save_screenshot(f"action_click_final_go_{i+1}.png")
-                        send_tg_notification("动作日志 📸", f"正在尝试第 {i+1} 次点击最终 Go 按钮", f"action_click_final_go_{i+1}.png")
                         
                         sb.js_click(final_btn)
                         sb.sleep(5)
@@ -286,7 +276,6 @@ def run_test():
                         if success_redirect:
                             click_final = True
                             sb.save_screenshot("step9_final_clicked.png")
-                            send_tg_notification("进度日志 📸", "成功触发自动重定向确认续期", "step9_final_clicked.png")
                             break
                         
                         if not sb.is_element_visible(final_btn):
@@ -311,7 +300,6 @@ def run_test():
                     logger.info(f"🔄 [面板监控] 正在执行第 {r+1} 次刷新...")
                     sb.refresh_page()
                     sb.save_screenshot(f"refresh_step_{r+1}.png")
-                    send_tg_notification("进度日志 📸", f"执行第 {r+1} 次刷新确认", f"refresh_step_{r+1}.png")
             
             # --- 第七阶段: 结果验证 ---
             logger.info("🏁 [面板监控] 操作完成，正在回访 Pella 验证续期结果...")
