@@ -28,16 +28,15 @@ def send_tg_notification(status, message, photo_path=None):
     except Exception as e: logger.error(f"TG通知失败: {e}")
 
 # ==========================================
-# 2. Gmail 验证码提取 (多试几次，多等一会儿)
+# 2. Gmail 验证码提取 (锁死不改)
 # ==========================================
 def get_pella_code(mail_address, app_password):
-    logger.info("📡 正在连接 Gmail 抓取验证码 (最多等待25轮)...")
+    logger.info("📡 正在连接 Gmail 抓取验证码...")
     try:
         mail = imaplib.IMAP4_SSL("imap.gmail.com")
         mail.login(mail_address, app_password)
         mail.select("inbox")
-        for i in range(25): # 增加尝试次数
-            logger.info(f"📩 正在进行第 {i+1}/25 轮邮件检索...")
+        for i in range(10):
             status, messages = mail.search(None, '(FROM "Pella" UNSEEN)')
             if status == "OK" and messages[0]:
                 latest_msg_id = messages[0].split()[-1]
@@ -54,13 +53,10 @@ def get_pella_code(mail_address, app_password):
                 code = re.search(r'\b\d{6}\b', content)
                 if code:
                     mail.store(latest_msg_id, '+FLAGS', '\\Seen')
-                    logger.info(f"✅ 成功抓取验证码: {code.group()}")
                     return code.group()
-            time.sleep(12) # 每次间隔12秒
+            time.sleep(10)
         return None
-    except Exception as e: 
-        logger.error(f"📧 邮件连接异常: {e}")
-        return None
+    except Exception as e: return None
 
 # ==========================================
 # 3. Pella 自动化流程
@@ -72,7 +68,7 @@ def run_test():
     
     with SB(uc=True, xvfb=True) as sb:
         try:
-            # --- 第一阶段: 登录与触发邮件 ---
+            # --- 第一阶段: 登录与状态识别 ---
             logger.info("🚀 [面板监控] 正在启动 Pella 登录流程...")
             sb.uc_open_with_reconnect("https://www.pella.app/login", 10)
             sb.sleep(5)
@@ -85,30 +81,27 @@ def run_test():
             for char in email_addr:
                 sb.add_text("#identifier-field", char)
                 time.sleep(0.1)
+            sb.save_screenshot("step2_input_email.png")
+            send_tg_notification("进度日志 📸", "已输入邮箱地址", "step2_input_email.png")
             
-            # 【核心修正】：先按回车，让 Pella 发送邮件
             sb.press_keys("#identifier-field", "\n")
-            logger.info("📩 [面板监控] 已提交邮箱，等待系统发送验证码...")
-            sb.save_screenshot("step2_email_submitted.png")
-            send_tg_notification("进度日志 📸", "已提交邮箱，指令系统发送验证码", "step2_email_submitted.png")
+            sb.sleep(5)
             
-            sb.sleep(5) # 给系统一点反应时间
-
-            # --- 第二阶段: 抓取并输入验证码 ---
             auth_code = get_pella_code(email_addr, app_pw)
-            if not auth_code: raise Exception("验证码抓取失败 (超时或未收到)")
+            if not auth_code: raise Exception("验证码抓取失败")
+            logger.info(f"🔢 [面板监控] 抓取到验证码: {auth_code}")
             
             sb.type('input[data-input-otp="true"]', auth_code)
             sb.sleep(10)
             sb.save_screenshot("step3_after_otp.png")
-            send_tg_notification("进度日志 📸", "验证码输入完毕", "step3_after_otp.png")
+            send_tg_notification("进度日志 📸", "已提交验证码", "step3_after_otp.png")
 
-            # --- 第三阶段: 检查 Pella 状态 ---
+            # --- 第二阶段: 检查 Pella 状态 ---
             logger.info("🔍 [面板监控] 正在检查服务器初始状态...")
             sb.uc_open_with_reconnect(target_server_url, 10)
             sb.sleep(10) 
             sb.save_screenshot("step4_server_dashboard.png")
-            send_tg_notification("进度日志 📸", "已进入服务器面板", "step4_server_dashboard.png")
+            send_tg_notification("进度日志 📸", "已进入服务器控制面板", "step4_server_dashboard.png")
             
             def get_expiry_time_raw(sb_obj):
                 try:
@@ -133,23 +126,28 @@ def run_test():
             logger.info(f"🕒 [面板监控] 续期前剩余时间: {expiry_before}")
 
             target_btn_selector = 'a[href*="cuty.io"]'
+            
             if sb.is_element_visible(target_btn_selector):
                 btn_class = sb.get_attribute(target_btn_selector, "class")
+                # 【关键修正】：使用更严格的过滤逻辑，排除掉包含 'disabled:' 的干扰项
+                # 只有当按钮 class 包含 'opacity-50' 且不带 'disabled:' 前缀时，才认为是冷却中
                 is_cooling = "opacity-50" in btn_class and "disabled:opacity-50" not in btn_class
+                
                 if is_cooling or "pointer-events-none" in btn_class:
-                    logger.warning("🕒 [面板监控] 按钮处于冷却中。")
-                    send_tg_notification("保活报告 (冷却中) 🕒", f"按钮尚在冷却。剩余: {expiry_before}", "step4_server_dashboard.png")
+                    logger.warning("🕒 [面板监控] 按钮处于冷却中，任务结束。")
+                    send_tg_notification("保活报告 (冷却中) 🕒", f"按钮尚在冷却。剩余时间: {expiry_before}", "step4_server_dashboard.png")
                     return 
 
-            # --- 第四阶段: 获取动态网址并跳转 ---
-            logger.info("🖱️ [面板监控] 抓取动态续期链接...")
+            # --- 第三阶段: 获取动态网址并跳转 ---
+            logger.info("🖱️ [面板监控] 正在从页面抓取动态续期链接...")
             dynamic_renew_url = sb.get_attribute(target_btn_selector, "href")
+            logger.info(f"🔗 [面板监控] 成功识别续期网址: {dynamic_renew_url}")
+            
             sb.uc_open_with_reconnect(dynamic_renew_url, 10)
             sb.sleep(5)
             sb.save_screenshot("step5_renew_url_opened.png")
-            send_tg_notification("进度日志 📸", "已进入续期链接", "step5_renew_url_opened.png")
+            send_tg_notification("进度日志 📸", "已打开续期跳转链接", "step5_renew_url_opened.png")
 
-            # 执行第一个 Continue 
             logger.info("🖱️ [面板监控] 执行第一个 Continue 强力点击...")
             for i in range(5):
                 try:
@@ -159,48 +157,76 @@ def run_test():
                         if len(sb.driver.window_handles) > 1:
                             sb.driver.switch_to.window(sb.driver.window_handles[0])
                         if not sb.is_element_visible('button#submit-button[data-ref="first"]'):
-                            sb.save_screenshot("step5_5_first_done.png")
-                            send_tg_notification("进度日志 📸", "第一个 Continue 点击成功", "step5_5_first_done.png")
                             break
                 except: pass
 
-            # --- 第五阶段: Cloudflare 与 Robot ---
-            logger.info("🛡️ [面板监控] 处理验证码挑战...")
+            # --- 第四阶段: 处理 Cloudflare 人机挑战 (Kata 模式 - 已验证有效) ---
+            logger.info("🛡️ [面板监控] 检测人机验证中...")
             sb.sleep(5)
             try:
                 cf_iframe = 'iframe[src*="cloudflare"]'
                 if sb.is_element_visible(cf_iframe):
+                    logger.info("✅ [面板监控] 发现 CF 验证，尝试 Kata 模式穿透...")
                     sb.switch_to_frame(cf_iframe)
                     sb.click('span.mark') 
                     sb.switch_to_parent_frame()
                     sb.sleep(6)
+                    sb.save_screenshot("step6_after_cf.png")
+                    send_tg_notification("进度日志 📸", "已尝试点击 CF 验证", "step6_after_cf.png")
+                else:
+                    sb.uc_gui_click_captcha()
             except: pass
 
+            # 【新增逻辑】：清理阻碍点击的广告弹窗
+            def clean_ads(sb_obj):
+                try:
+                    # 移除 ID 以 div_netpub_ins_ 开头的广告容器
+                    js_cleanup = """
+                    var ads = document.querySelectorAll('div[id^="div_netpub_ins_"]');
+                    ads.forEach(function(ad) { ad.remove(); });
+                    var iframes = document.querySelectorAll('iframe[id^="adg-"]');
+                    iframes.forEach(function(f) { f.remove(); });
+                    document.body.style.overflow = 'auto';
+                    """
+                    sb_obj.execute_script(js_cleanup)
+                except: pass
+
+            # --- 第五阶段: 强力点击 "I am not a robot" ---
+            logger.info("🖱️ [面板监控] 开始点击 'I am not a robot' (data-ref='captcha')...")
             captcha_btn = 'button#submit-button[data-ref="captcha"]'
             for i in range(8): 
                 try:
                     if sb.is_element_visible(captcha_btn):
+                        clean_ads(sb) # 点击前清理广告
                         sb.js_click(captcha_btn)
+                        logger.info(f"🖱️ [面板监控] 点击 'I am not a robot' 第 {i+1} 次")
                         sb.sleep(3)
                         if len(sb.driver.window_handles) > 1:
                             curr = sb.driver.current_window_handle
-                            for h in sb.driver.window_handles:
-                                if h != curr: sb.driver.switch_to.window(h); sb.driver.close()
+                            for handle in sb.driver.window_handles:
+                                if handle != curr:
+                                    sb.driver.switch_to.window(handle)
+                                    sb.driver.close()
                             sb.driver.switch_to.window(sb.driver.window_handles[0])
                         if not sb.is_element_visible(captcha_btn):
-                            sb.save_screenshot("step7_robot_done.png")
-                            send_tg_notification("进度日志 📸", "Robot 按钮点击成功", "step7_robot_done.png")
+                            sb.save_screenshot("step7_robot_clicked.png")
+                            send_tg_notification("进度日志 📸", "成功点击 Robot 按钮", "step7_robot_clicked.png")
                             break
                 except: pass
 
-            # --- 第六阶段: 最终点击 ---
-            logger.info("⌛ [面板监控] 等待 18 秒计时...")
+            # --- 第六阶段: 等待 计时并点击最终 Go 按钮 ---
+            logger.info("⌛ [面板监控] 等待 18 秒计时结束...")
             sb.sleep(18)
+            sb.save_screenshot("step8_wait_timer.png")
+            send_tg_notification("进度日志 📸", "18秒倒计时结束，准备点击最终按钮", "step8_wait_timer.png")
+            
             final_btn = 'button#submit-button[data-ref="show"]'
             click_final = False
             for i in range(8):
                 try:
                     if sb.is_element_visible(final_btn):
+                        clean_ads(sb) # 点击前清理广告
+                        logger.info(f"🖱️ [面板监控] 第 {i+1} 次点击最终 Go 按钮...")
                         sb.js_click(final_btn)
                         sb.sleep(3)
                         if len(sb.driver.window_handles) > 1:
@@ -208,28 +234,33 @@ def run_test():
                             for h in sb.driver.window_handles:
                                 if h != curr: sb.driver.switch_to.window(h); sb.driver.close()
                             sb.driver.switch_to.window(sb.driver.window_handles[0])
+                        
                         if not sb.is_element_visible(final_btn):
                             click_final = True
-                            sb.save_screenshot("step9_final_done.png")
-                            send_tg_notification("进度日志 📸", "最终按钮点击成功", "step9_final_done.png")
+                            sb.save_screenshot("step9_final_clicked.png")
+                            send_tg_notification("进度日志 📸", "成功点击最终 Go 按钮", "step9_final_clicked.png")
                             break
                 except: pass
             
-            # --- 第七阶段: 结果验证 ---
+            # --- 第七阶段: 结果验证 (使用指定 JS 逻辑) ---
+            logger.info("🏁 [面板监控] 操作完成，正在回访 Pella 验证续期结果...")
+            sb.sleep(5)
             sb.uc_open_with_reconnect(target_server_url, 10)
             sb.sleep(10)
+            
             expiry_after = get_expiry_time_raw(sb)
+            logger.info(f"🕒 [面板监控] 续期后剩余时间: {expiry_after}")
             sb.save_screenshot("final_result.png")
             
             if click_final:
-                send_tg_notification("续期成功 ✅", f"之前: {expiry_before}\n之后: {expiry_after}", "final_result.png")
+                send_tg_notification("续期成功 ✅", f"续期前: {expiry_before}\n续期后: {expiry_after}", "final_result.png")
             else:
-                send_tg_notification("操作反馈 ⚠️", f"执行完毕，请检查。之前: {expiry_before}\n当前: {expiry_after}", "final_result.png")
+                send_tg_notification("操作反馈 ⚠️", f"流程已执行至最后，请检查截图。续期前: {expiry_before}\n当前时间: {expiry_after}", "final_result.png")
 
         except Exception as e:
             logger.error(f"🔥 [面板监控] 流程崩溃: {str(e)}")
             sb.save_screenshot("error.png")
-            send_tg_notification("保活失败 ❌", f"错误: `{str(e)}`", "error.png")
+            send_tg_notification("保活失败 ❌", f"错误详情: `{str(e)}`", "error.png")
             raise e
 
 if __name__ == "__main__":
