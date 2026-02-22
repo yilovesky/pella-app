@@ -250,33 +250,53 @@ def run_test():
                 try:
                     if sb.is_element_visible(final_btn):
                         clean_ads(sb)
+                        
+                        # 记录当前执行操作的主窗口（即 Cuty 所在的窗口）
+                        main_window = sb.driver.current_window_handle
+                        
                         logger.info(f"🖱️ [面板监控] 第 {i+1} 次点击最终 Go 按钮...")
                         sb.js_click(final_btn)
-                        sb.sleep(3)
+                        sb.sleep(5)
+                        
+                        # 强力清理因点击产生的广告弹窗并切回主窗口
                         if len(sb.driver.window_handles) > 1:
-                            curr = sb.driver.current_window_handle
                             for h in sb.driver.window_handles:
-                                if h != curr: sb.driver.switch_to.window(h); sb.driver.close()
-                            sb.driver.switch_to.window(sb.driver.window_handles[0])
+                                if h != main_window:
+                                    sb.driver.switch_to.window(h)
+                                    sb.driver.close()
+                            sb.driver.switch_to.window(main_window)
+                        
+                        # 监测主窗口是否正在发生自动重定向（Cuty 会自动跳回 Pella）
+                        success_redirect = False
+                        for _ in range(25):
+                            if "pella.app/renew/" in sb.get_current_url():
+                                success_redirect = True
+                                break
+                            sb.sleep(1)
+                        
+                        if success_redirect:
+                            click_final = True
+                            sb.save_screenshot("step9_final_clicked.png")
+                            send_tg_notification("进度日志 📸", "成功触发自动重定向确认续期", "step9_final_clicked.png")
+                            break
                         
                         if not sb.is_element_visible(final_btn):
                             click_final = True
-                            sb.save_screenshot("step9_final_clicked.png")
-                            send_tg_notification("进度日志 📸", "成功点击最终 Go 按钮", "step9_final_clicked.png")
                             break
                 except: pass
 
             # --- 点击 GO 之后的操作 ---
             if click_final:
-                logger.info("⌛ [面板监控] 点击 GO 成功，等待 15 秒...")
-                sb.sleep(15)
+                logger.info("⌛ [面板监控] 重置/跳转成功，执行确认...")
+                sb.sleep(5)
                 
-                # 拼接动态 UUID 跳转链接
-                renew_final_url = f"https://www.pella.app/renew/{extracted_uuid}"
-                logger.info(f"🚀 [面板监控] 正在跳转至最终续期确认页: {renew_final_url}")
-                sb.uc_open_with_reconnect(renew_final_url, 10)
+                # 如果主窗口没变，补救执行一次跳转
+                if "pella.app/renew/" not in sb.get_current_url():
+                    renew_final_url = f"https://www.pella.app/renew/{extracted_uuid}"
+                    logger.info(f"🚀 [面板监控] 正在执行手动续期确认跳转: {renew_final_url}")
+                    sb.uc_open_with_reconnect(renew_final_url, 10)
                 
-                # 循环刷新 3 次，每次间隔 5 秒
+                # 循环刷新 3 次，每次间隔 5 秒以确保后端入库
                 for r in range(3):
                     sb.sleep(5)
                     logger.info(f"🔄 [面板监控] 正在执行第 {r+1} 次刷新...")
