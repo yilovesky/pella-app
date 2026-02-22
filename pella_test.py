@@ -62,13 +62,12 @@ def get_pella_code(mail_address, app_password):
 # 3. Pella 自动化流程
 # ==========================================
 def run_test():
-    email_addr = os.environ.get("PELLA_EMAIL")
-    app_pw = os.environ.get("GMAIL_APP_PASSWORD")
-    target_server_url = "https://www.pella.app/server/3609ece276a7473bba79f75fd897aa78"
+    email_addr = "yilovesky520@gmail.com"
+    app_pw = "rmbfwtttsecnxhog"
     
     with SB(uc=True, xvfb=True) as sb:
         try:
-            # --- 第一阶段: 登录与状态识别 ---
+            # --- 第一阶段: 登录与动态服务器识别 ---
             logger.info("🚀 [面板监控] 正在启动 Pella 登录流程...")
             sb.uc_open_with_reconnect("https://www.pella.app/login", 10)
             sb.sleep(5)
@@ -93,11 +92,23 @@ def run_test():
             
             sb.type('input[data-input-otp="true"]', auth_code)
             sb.sleep(10)
-            sb.save_screenshot("step3_after_otp.png")
-            send_tg_notification("进度日志 📸", "已提交验证码", "step3_after_otp.png")
+            
+            # 【动态扫描 UUID】: 登录后在主页寻找服务器链接
+            logger.info("🔍 [面板监控] 正在扫描网页中的服务器 UUID...")
+            sb.wait_for_element_visible('a[href^="/server/"]', timeout=20)
+            server_link = sb.get_attribute('a[href^="/server/"]', "href")
+            # 如果是相对路径则补全
+            if server_link.startswith("/"):
+                target_server_url = f"https://www.pella.app{server_link}"
+            else:
+                target_server_url = server_link
+            
+            logger.info(f"✅ [面板监控] 自动识别到服务器地址: {target_server_url}")
+            sb.save_screenshot("step3_after_login_scan.png")
+            send_tg_notification("进度日志 📸", f"登录成功，自动扫到服务器: {target_server_url}", "step3_after_login_scan.png")
 
             # --- 第二阶段: 检查 Pella 状态 ---
-            logger.info("🔍 [面板监控] 正在检查服务器初始状态...")
+            logger.info("🔍 [面板监控] 正在进入识别到的服务器面板...")
             sb.uc_open_with_reconnect(target_server_url, 10)
             sb.sleep(10) 
             sb.save_screenshot("step4_server_dashboard.png")
@@ -129,8 +140,6 @@ def run_test():
             
             if sb.is_element_visible(target_btn_selector):
                 btn_class = sb.get_attribute(target_btn_selector, "class")
-                # 【关键修正】：使用更严格的过滤逻辑，排除掉包含 'disabled:' 的干扰项
-                # 只有当按钮 class 包含 'opacity-50' 且不带 'disabled:' 前缀时，才认为是冷却中
                 is_cooling = "opacity-50" in btn_class and "disabled:opacity-50" not in btn_class
                 
                 if is_cooling or "pointer-events-none" in btn_class:
@@ -160,7 +169,7 @@ def run_test():
                             break
                 except: pass
 
-            # --- 第四阶段: 处理 Cloudflare 人机挑战 (Kata 模式 - 已验证有效) ---
+            # --- 第四阶段: 处理 Cloudflare 人机挑战 ---
             logger.info("🛡️ [面板监控] 检测人机验证中...")
             sb.sleep(5)
             try:
@@ -177,10 +186,8 @@ def run_test():
                     sb.uc_gui_click_captcha()
             except: pass
 
-            # 【新增逻辑】：清理阻碍点击的广告弹窗
             def clean_ads(sb_obj):
                 try:
-                    # 移除 ID 以 div_netpub_ins_ 开头的广告容器
                     js_cleanup = """
                     var ads = document.querySelectorAll('div[id^="div_netpub_ins_"]');
                     ads.forEach(function(ad) { ad.remove(); });
@@ -197,7 +204,7 @@ def run_test():
             for i in range(8): 
                 try:
                     if sb.is_element_visible(captcha_btn):
-                        clean_ads(sb) # 点击前清理广告
+                        clean_ads(sb) 
                         sb.js_click(captcha_btn)
                         logger.info(f"🖱️ [面板监控] 点击 'I am not a robot' 第 {i+1} 次")
                         sb.sleep(3)
@@ -214,7 +221,7 @@ def run_test():
                             break
                 except: pass
 
-            # --- 第六阶段: 等待 计时并点击最终 Go 按钮 ---
+            # --- 第六阶段: 等待 18 秒计时并点击最终 Go 按钮 ---
             logger.info("⌛ [面板监控] 等待 18 秒计时结束...")
             sb.sleep(18)
             sb.save_screenshot("step8_wait_timer.png")
@@ -225,7 +232,7 @@ def run_test():
             for i in range(8):
                 try:
                     if sb.is_element_visible(final_btn):
-                        clean_ads(sb) # 点击前清理广告
+                        clean_ads(sb)
                         logger.info(f"🖱️ [面板监控] 第 {i+1} 次点击最终 Go 按钮...")
                         sb.js_click(final_btn)
                         sb.sleep(3)
@@ -242,7 +249,7 @@ def run_test():
                             break
                 except: pass
             
-            # --- 第七阶段: 结果验证 (使用指定 JS 逻辑) ---
+            # --- 第七阶段: 结果验证 ---
             logger.info("🏁 [面板监控] 操作完成，正在回访 Pella 验证续期结果...")
             sb.sleep(5)
             sb.uc_open_with_reconnect(target_server_url, 10)
