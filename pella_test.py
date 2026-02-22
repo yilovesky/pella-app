@@ -97,7 +97,8 @@ def run_test():
             logger.info("🔍 [面板监控] 正在扫描网页中的服务器 UUID...")
             sb.wait_for_element_visible('a[href^="/server/"]', timeout=20)
             server_link = sb.get_attribute('a[href^="/server/"]', "href")
-            # 提取 UUID 用于后续跳转
+            
+            # 提取 UUID 用于验证跳转
             uuid_match = re.search(r'/server/([a-z0-9]+)', server_link)
             extracted_uuid = uuid_match.group(1) if uuid_match else ""
             
@@ -143,13 +144,7 @@ def run_test():
             target_btn_selector = 'a[href*="cuty.io"]'
             
             if sb.is_element_visible(target_btn_selector):
-                btn_class = sb.get_attribute(target_btn_selector, "class")
-                is_cooling = "opacity-50" in btn_class and "disabled:opacity-50" not in btn_class
-                
-                if is_cooling or "pointer-events-none" in btn_class:
-                    logger.warning("🕒 [面板监控] 按钮处于冷却中，任务结束。")
-                    send_tg_notification("保活报告 (冷却中) 🕒", f"按钮尚在冷却。剩余时间: {expiry_before}", "step4_server_dashboard.png")
-                    return 
+                logger.info("🖱️ [面板监控] 发现续期按钮，准备执行点击...")
 
             # --- 第三阶段: 获取动态网址并跳转 ---
             logger.info("🖱️ [面板监控] 正在从页面抓取动态续期链接...")
@@ -213,12 +208,13 @@ def run_test():
                         logger.info(f"🖱️ [面板监控] 点击 'I am not a robot' 第 {i+1} 次")
                         sb.sleep(3)
                         if len(sb.driver.window_handles) > 1:
+                            # 保持在原标签页，只关闭新开的弹窗
                             curr = sb.driver.current_window_handle
                             for handle in sb.driver.window_handles:
                                 if handle != curr:
                                     sb.driver.switch_to.window(handle)
                                     sb.driver.close()
-                            sb.driver.switch_to.window(sb.driver.window_handles[0])
+                            sb.driver.switch_to.window(curr)
                         if not sb.is_element_visible(captcha_btn):
                             sb.save_screenshot("step7_robot_clicked.png")
                             send_tg_notification("进度日志 📸", "成功点击 Robot 按钮", "step7_robot_clicked.png")
@@ -241,10 +237,11 @@ def run_test():
                         sb.js_click(final_btn)
                         sb.sleep(3)
                         if len(sb.driver.window_handles) > 1:
+                            # 同样保持原标签页，只关掉弹出的广告标签
                             curr = sb.driver.current_window_handle
                             for h in sb.driver.window_handles:
                                 if h != curr: sb.driver.switch_to.window(h); sb.driver.close()
-                            sb.driver.switch_to.window(sb.driver.window_handles[0])
+                            sb.driver.switch_to.window(curr)
                         
                         if not sb.is_element_visible(final_btn):
                             click_final = True
@@ -253,23 +250,19 @@ def run_test():
                             break
                 except: pass
 
-            # 【新增要求】：点击 GO 之后的操作
+            # 【修正逻辑】：点击 GO 之后，在原标签页等待自动跳转
             if click_final:
-                logger.info("⌛ [面板监控] 点击 GO 成功，等待 15 秒...")
+                logger.info("⌛ [面板监控] 点击 GO 成功，原地静默等待 15 秒以完成自动跳转...")
                 sb.sleep(15)
                 
-                # 拼接动态 UUID 跳转链接
-                renew_final_url = f"https://www.pella.app/renew/{extracted_uuid}"
-                logger.info(f"🚀 [面板监控] 正在跳转至最终续期确认页: {renew_final_url}")
-                sb.uc_open_with_reconnect(renew_final_url, 10)
-                
-                # 循环刷新 3 次，每次间隔 5 秒
+                # 循环确认是否跳回了 Pella 续期确认页，并执行 3 次刷新
+                logger.info(f"🔄 [面板监控] 正在确认是否跳回 Pella，并执行 3 次刷新确认...")
                 for r in range(3):
                     sb.sleep(5)
                     logger.info(f"🔄 [面板监控] 正在执行第 {r+1} 次刷新...")
                     sb.refresh_page()
                     sb.save_screenshot(f"refresh_step_{r+1}.png")
-                    send_tg_notification("进度日志 📸", f"执行第 {r+1} 次刷新确认", f"refresh_step_{r+1}.png")
+                    send_tg_notification("进度日志 📸", f"原标签页第 {r+1} 次刷新确认", f"refresh_step_{r+1}.png")
             
             # --- 第七阶段: 结果验证 ---
             logger.info("🏁 [面板监控] 操作完成，正在回访 Pella 验证续期结果...")
