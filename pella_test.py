@@ -66,6 +66,9 @@ def run_test():
     app_pw = "rmbfwtttsecnxhog"
     
     with SB(uc=True, xvfb=True) as sb:
+        # 记录初始窗口句柄，确保万无一失
+        main_window = sb.driver.current_window_handle
+        
         try:
             # --- 第一阶段: 登录与动态服务器识别 ---
             logger.info("🚀 [面板监控] 正在启动 Pella 登录流程...")
@@ -163,7 +166,7 @@ def run_test():
                         sb.js_click('button#submit-button[data-ref="first"]')
                         sb.sleep(3)
                         if len(sb.driver.window_handles) > 1:
-                            sb.driver.switch_to.window(sb.driver.window_handles[0])
+                            sb.driver.switch_to.window(main_window)
                         if not sb.is_element_visible('button#submit-button[data-ref="first"]'):
                             break
                 except: pass
@@ -207,14 +210,9 @@ def run_test():
                         sb.js_click(captcha_btn)
                         logger.info(f"🖱️ [面板监控] 点击 'I am not a robot' 第 {i+1} 次")
                         sb.sleep(3)
+                        # 核心修正：点击后立即明确强制切回主窗口
                         if len(sb.driver.window_handles) > 1:
-                            # 保持在原标签页，只关闭新开的弹窗
-                            curr = sb.driver.current_window_handle
-                            for handle in sb.driver.window_handles:
-                                if handle != curr:
-                                    sb.driver.switch_to.window(handle)
-                                    sb.driver.close()
-                            sb.driver.switch_to.window(curr)
+                            sb.driver.switch_to.window(main_window)
                         if not sb.is_element_visible(captcha_btn):
                             sb.save_screenshot("step7_robot_clicked.png")
                             send_tg_notification("进度日志 📸", "成功点击 Robot 按钮", "step7_robot_clicked.png")
@@ -236,12 +234,9 @@ def run_test():
                         logger.info(f"🖱️ [面板监控] 第 {i+1} 次点击最终 Go 按钮...")
                         sb.js_click(final_btn)
                         sb.sleep(3)
+                        # 核心修正：点完 GO 立即切回原标签页，不让焦点跑偏
                         if len(sb.driver.window_handles) > 1:
-                            # 同样保持原标签页，只关掉弹出的广告标签
-                            curr = sb.driver.current_window_handle
-                            for h in sb.driver.window_handles:
-                                if h != curr: sb.driver.switch_to.window(h); sb.driver.close()
-                            sb.driver.switch_to.window(curr)
+                            sb.driver.switch_to.window(main_window)
                         
                         if not sb.is_element_visible(final_btn):
                             click_final = True
@@ -250,16 +245,17 @@ def run_test():
                             break
                 except: pass
 
-            # 【修正逻辑】：点击 GO 之后，在原标签页等待自动跳转
+            # 【修正逻辑】：点击 GO 之后，在原标签页执行 15 秒等待和刷新
             if click_final:
-                logger.info("⌛ [面板监控] 点击 GO 成功，原地静默等待 15 秒以完成自动跳转...")
+                # 再次强调切换回原窗口
+                sb.driver.switch_to.window(main_window)
+                logger.info("⌛ [面板监控] 点击 GO 成功，原标签页原地等待 15 秒...")
                 sb.sleep(15)
                 
-                # 循环确认是否跳回了 Pella 续期确认页，并执行 3 次刷新
-                logger.info(f"🔄 [面板监控] 正在确认是否跳回 Pella，并执行 3 次刷新确认...")
+                # 在原标签页执行 3 次刷新
                 for r in range(3):
                     sb.sleep(5)
-                    logger.info(f"🔄 [面板监控] 正在执行第 {r+1} 次刷新...")
+                    logger.info(f"🔄 [面板监控] 原标签页正在执行第 {r+1} 次刷新...")
                     sb.refresh_page()
                     sb.save_screenshot(f"refresh_step_{r+1}.png")
                     send_tg_notification("进度日志 📸", f"原标签页第 {r+1} 次刷新确认", f"refresh_step_{r+1}.png")
@@ -282,7 +278,7 @@ def run_test():
         except Exception as e:
             logger.error(f"🔥 [面板监控] 流程崩溃: {str(e)}")
             sb.save_screenshot("error.png")
-            send_tg_notification("保活失败 ❌", f"错误详情: `{str(e)}`", "error.png")
+            send_tg_notification("保活报告 ❌", f"错误详情: `{str(e)}`", "error.png")
             raise e
 
 if __name__ == "__main__":
