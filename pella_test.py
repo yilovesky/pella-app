@@ -96,13 +96,15 @@ def run_test():
             sb.save_screenshot("step3_after_otp.png")
             send_tg_notification("进度日志 📸", "已提交验证码", "step3_after_otp.png")
             
-            # 【动态扫描 UUID】
+            # 【动态扫描 UUID】: 登录后在主页寻找服务器链接
             logger.info("🔍 [面板监控] 正在扫描网页中的服务器 UUID...")
             sb.wait_for_element_visible('a[href^="/server/"]', timeout=20)
             server_link = sb.get_attribute('a[href^="/server/"]', "href")
+            # 提取 UUID 用于后续跳转验证
             uuid_match = re.search(r'/server/([a-z0-9]+)', server_link)
             extracted_uuid = uuid_match.group(1) if uuid_match else ""
             
+            # 如果是相对路径则补全
             if server_link.startswith("/"):
                 target_server_url = f"https://www.pella.app{server_link}"
             else:
@@ -110,13 +112,14 @@ def run_test():
             
             logger.info(f"✅ [面板监控] 自动识别到服务器地址: {target_server_url}")
             sb.save_screenshot("step3_after_login_scan.png")
-            send_tg_notification("进度日志 📸", f"登录成功，扫到服务器: {target_server_url}", "step3_after_login_scan.png")
+            send_tg_notification("进度日志 📸", f"登录成功，自动扫到服务器: {target_server_url}", "step3_after_login_scan.png")
 
             # --- 第二阶段: 检查 Pella 状态 ---
             logger.info("🔍 [面板监控] 正在进入识别到的服务器面板...")
             sb.uc_open_with_reconnect(target_server_url, 10)
             sb.sleep(10) 
             sb.save_screenshot("step4_server_dashboard.png")
+            send_tg_notification("进度日志 📸", "已进入服务器控制面板", "step4_server_dashboard.png")
             
             def get_expiry_time_raw(sb_obj):
                 try:
@@ -140,18 +143,23 @@ def run_test():
             expiry_before = get_expiry_time_raw(sb)
             logger.info(f"🕒 [面板监控] 续期前剩余时间: {expiry_before}")
 
-            # --- 物理点击进入续期页 ---
             target_btn_selector = 'a[href*="cuty.io"]'
+            
             if sb.is_element_visible(target_btn_selector):
-                logger.info("🖱️ [面板监控] 正在执行物理点击触发续期...")
-                sb.click(target_btn_selector)
-                sb.sleep(5)
-                if len(sb.driver.window_handles) > 1:
-                    for handle in sb.driver.window_handles:
-                        sb.driver.switch_to.window(handle)
-                        if "cuty.io" in sb.driver.current_url: break
-                sb.save_screenshot("step5_renew_clicked.png")
-                send_tg_notification("进度日志 📸", "已通过真实点击进入续期页", "step5_renew_clicked.png")
+                logger.info("🖱️ [面板监控] 发现续期按钮，准备物理点击执行...")
+
+            # --- 第三阶段: 真实点击进入续期页 ---
+            logger.info("🖱️ [面板监控] 正在物理点击触发后端握手...")
+            sb.click(target_btn_selector)
+            sb.sleep(5)
+            # 确保切焦点到 Cuty.io 标签页
+            if len(sb.driver.window_handles) > 1:
+                for handle in sb.driver.window_handles:
+                    sb.driver.switch_to.window(handle)
+                    if "cuty.io" in sb.driver.current_url:
+                        break
+            sb.save_screenshot("step5_renew_clicked.png")
+            send_tg_notification("进度日志 📸", "已通过真实点击进入续期页", "step5_renew_clicked.png")
 
             logger.info("🖱️ [面板监控] 执行第一个 Continue 强力点击...")
             for i in range(5):
@@ -161,10 +169,11 @@ def run_test():
                         sb.sleep(3)
                         if len(sb.driver.window_handles) > 1:
                             sb.driver.switch_to.window(sb.driver.window_handles[0])
-                        if not sb.is_element_visible('button#submit-button[data-ref="first"]'): break
+                        if not sb.is_element_visible('button#submit-button[data-ref="first"]'):
+                            break
                 except: pass
 
-            # --- 第四阶段: 处理 Cloudflare 人机挑战 (加入有效 Kata 穿透逻辑) ---
+            # --- 第四阶段: 处理 Cloudflare 人机挑战 (精准加入穿透代码) ---
             logger.info("🛡️ [面板监控] 检测人机验证中...")
             sb.sleep(5)
             try:
@@ -176,7 +185,7 @@ def run_test():
                     sb.switch_to_parent_frame()
                     sb.sleep(6)
                     sb.save_screenshot("step6_after_cf.png")
-                    send_tg_notification("进度日志 📸", "已通过 Kata 模式穿透 CF 验证", "step6_after_cf.png")
+                    send_tg_notification("进度日志 📸", "已通过 Kata 穿透 CF 验证", "step6_after_cf.png")
                 else:
                     sb.uc_gui_click_captcha()
             except: pass
@@ -232,6 +241,7 @@ def run_test():
                         sb.sleep(3)
                         if len(sb.driver.window_handles) > 1:
                             sb.driver.switch_to.window(main_window)
+                        
                         if not sb.is_element_visible(final_btn):
                             click_final = True
                             sb.save_screenshot("step9_final_clicked.png")
@@ -239,14 +249,15 @@ def run_test():
                             break
                 except: pass
 
-            # 点完 GO 之后原地等待并刷新
+            # 点完 GO 之后的操作
             if click_final:
                 sb.driver.switch_to.window(main_window)
-                logger.info("⌛ [面板监控] 点击成功，原标签页原地等待 15 秒...")
+                logger.info("⌛ [面板监控] 点击 GO 成功，原标签页原地等待 15 秒...")
                 sb.sleep(15)
+                
                 for r in range(3):
                     sb.sleep(5)
-                    logger.info(f"🔄 [面板监控] 原标签页正在执行第 {r+1} 次刷新...")
+                    logger.info(f"🔄 [面板监控] 原标签页正在执行第 {r+1} 次刷新确认...")
                     sb.refresh_page()
                     sb.save_screenshot(f"refresh_step_{r+1}.png")
                     send_tg_notification("进度日志 📸", f"原标签页第 {r+1} 次刷新确认", f"refresh_step_{r+1}.png")
