@@ -255,7 +255,14 @@ def run_test():
                 
                 # 2. 点击 GO
                 sb.js_click(final_btn)
-                sb.sleep(4) 
+                logger.info("🖱️ [面板监控] 已点击最终 GO 按钮，正在截屏取证...")
+                
+                # --- 新增：点击瞬间的截图确认 ---
+                sb.save_screenshot("step8_final_go_clicked.png")
+                send_tg_notification("进度日志 📸", "已经点击了最终 GO 按钮，等待重定向...", "step8_final_go_clicked.png")
+                # ------------------------------
+                
+                sb.sleep(4) # 等待广告窗口弹出 
                 
                 # 3. 强力清理弹出的广告窗口，并回到主窗口
                 if len(sb.driver.window_handles) > 1:
