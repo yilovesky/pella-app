@@ -132,13 +132,16 @@ def run_test():
                     """
                     raw_text = sb_obj.execute_script(js_code)
                     clean_text = " ".join(raw_text.split())
+                    # 引入稳健的正则逻辑提取数值
+                    match = re.search(r"expires in\s*(\d+)D", clean_text)
+                    val = float(match.group(1)) if match else -1.0
                     if "expiring in" in clean_text:
-                        return clean_text.split("expiring in")[1].split(".")[0].strip()
-                    return clean_text[:60]
-                except: return "获取失败"
+                        return clean_text.split("expiring in")[1].split(".")[0].strip(), val
+                    return clean_text[:60], val
+                except: return "获取失败", -1.0
 
-            expiry_before = get_expiry_time_raw(sb)
-            logger.info(f"🕒 [面板监控] 续期前剩余时间: {expiry_before}")
+            expiry_before_text, expiry_before_val = get_expiry_time_raw(sb)
+            logger.info(f"🕒 [面板监控] 续期前剩余时间: {expiry_before_text}")
 
             target_btn_selector = 'a[href*="cuty.io"]'
             
@@ -148,16 +151,23 @@ def run_test():
                 
                 if is_cooling or "pointer-events-none" in btn_class:
                     logger.warning("🕒 [面板监控] 按钮处于冷却中，任务结束。")
-                    send_tg_notification("保活报告 (冷却中) 🕒", f"按钮尚在冷却。剩余时间: {expiry_before}", "step4_server_dashboard.png")
+                    send_tg_notification("保活报告 (冷却中) 🕒", f"按钮尚在冷却。剩余时间: {expiry_before_text}", "step4_server_dashboard.png")
                     return 
 
-            # --- 第三阶段: 点击进入续期网站 ---
-            logger.info("🖱️ [面板监控] 正在通过点击触发续期链接跳转...")
-            # 【关键修改】：改为点击元素，不再直接跳转URL
-            sb.click(target_btn_selector)
+            # --- 第三阶段: 获取动态网址并跳转 ---
+            logger.info("🖱️ [面板监控] 正在从页面抓取动态续期链接...")
+            dynamic_renew_url = sb.get_attribute(target_btn_selector, "href")
+            logger.info(f"🔗 [面板监控] 成功识别续期网址: {dynamic_renew_url}")
+            
+            # 【逻辑搬运】：在新标签页打开，保持主页面不动
+            main_handle = sb.driver.current_window_handle
+            sb.execute_script(f"window.open('{dynamic_renew_url}');")
+            sb.sleep(2)
+            sb.driver.switch_to.window(sb.driver.window_handles[-1])
+            
             sb.sleep(5)
             sb.save_screenshot("step5_renew_url_opened.png")
-            send_tg_notification("进度日志 📸", "已通过点击进入续期跳转页面", "step5_renew_url_opened.png")
+            send_tg_notification("进度日志 📸", "已在新标签页打开续期链接", "step5_renew_url_opened.png")
 
             logger.info("🖱️ [面板监控] 执行第一个 Continue 强力点击...")
             for i in range(5):
@@ -165,8 +175,9 @@ def run_test():
                     if sb.is_element_visible('button#submit-button[data-ref="first"]'):
                         sb.js_click('button#submit-button[data-ref="first"]')
                         sb.sleep(3)
-                        if len(sb.driver.window_handles) > 1:
-                            sb.driver.switch_to.window(sb.driver.window_handles[0])
+                        # 确保不被弹窗带走
+                        if len(sb.driver.window_handles) > 2:
+                            sb.driver.switch_to.window(sb.driver.window_handles[-1])
                         if not sb.is_element_visible('button#submit-button[data-ref="first"]'):
                             break
                 except: pass
@@ -210,13 +221,14 @@ def run_test():
                         sb.js_click(captcha_btn)
                         logger.info(f"🖱️ [面板监控] 点击 'I am not a robot' 第 {i+1} 次")
                         sb.sleep(3)
-                        if len(sb.driver.window_handles) > 1:
+                        # 【逻辑搬运】：清理新开广告页并回切
+                        if len(sb.driver.window_handles) > 2:
                             curr = sb.driver.current_window_handle
                             for handle in sb.driver.window_handles:
-                                if handle != curr:
+                                if handle != main_handle and handle != curr:
                                     sb.driver.switch_to.window(handle)
                                     sb.driver.close()
-                            sb.driver.switch_to.window(sb.driver.window_handles[0])
+                            sb.driver.switch_to.window(curr)
                         if not sb.is_element_visible(captcha_btn):
                             sb.save_screenshot("step7_robot_clicked.png")
                             send_tg_notification("进度日志 📸", "成功点击 Robot 按钮", "step7_robot_clicked.png")
@@ -238,11 +250,11 @@ def run_test():
                         logger.info(f"🖱️ [面板监控] 第 {i+1} 次点击最终 Go 按钮...")
                         sb.js_click(final_btn)
                         sb.sleep(3)
-                        if len(sb.driver.window_handles) > 1:
+                        if len(sb.driver.window_handles) > 2:
                             curr = sb.driver.current_window_handle
                             for h in sb.driver.window_handles:
-                                if h != curr: sb.driver.switch_to.window(h); sb.driver.close()
-                            sb.driver.switch_to.window(sb.driver.window_handles[0])
+                                if h != main_handle and h != curr: sb.driver.switch_to.window(h); sb.driver.close()
+                            sb.driver.switch_to.window(curr)
                         
                         if not sb.is_element_visible(final_btn):
                             click_final = True
@@ -255,6 +267,9 @@ def run_test():
             if click_final:
                 logger.info("⌛ [面板监控] 点击 GO 成功，等待 15 秒...")
                 sb.sleep(15)
+                # 关闭续期页，回主标签页
+                sb.driver.close()
+                sb.driver.switch_to.window(main_handle)
                 
                 # 拼接动态 UUID 跳转链接
                 renew_final_url = f"https://www.pella.app/renew/{extracted_uuid}"
@@ -275,14 +290,15 @@ def run_test():
             sb.uc_open_with_reconnect(target_server_url, 10)
             sb.sleep(10)
             
-            expiry_after = get_expiry_time_raw(sb)
-            logger.info(f"🕒 [面板监控] 续期后剩余时间: {expiry_after}")
+            expiry_after_text, expiry_after_val = get_expiry_time_raw(sb)
+            logger.info(f"🕒 [面板监控] 续期后剩余时间: {expiry_after_text}")
             sb.save_screenshot("final_result.png")
             
-            if click_final:
-                send_tg_notification("续期成功 ✅", f"续期前: {expiry_before}\n续期后: {expiry_after}", "final_result.png")
+            # 【逻辑搬运】：数值对比判定
+            if click_final and expiry_after_val > expiry_before_val:
+                send_tg_notification("续期成功 ✅", f"数值增加确认！\n续期前: {expiry_before_text}\n续期后: {expiry_after_text}", "final_result.png")
             else:
-                send_tg_notification("操作反馈 ⚠️", f"流程已执行至最后，请检查截图。续期前: {expiry_before}\n当前时间: {expiry_after}", "final_result.png")
+                send_tg_notification("操作反馈 ⚠️", f"流程已结束，请核对数值天数。\n续期前: {expiry_before_text}\n当前时间: {expiry_after_text}", "final_result.png")
 
         except Exception as e:
             logger.error(f"🔥 [面板监控] 流程崩溃: {str(e)}")
