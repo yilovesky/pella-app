@@ -156,8 +156,7 @@ def run_test():
             dynamic_renew_url = sb.get_attribute(target_btn_selector, "href")
             logger.info(f"🔗 [面板监控] 成功识别续期网址: {dynamic_renew_url}")
             
-            # 【这里是唯一的修改处】：改为点击方式进入续期网站
-            sb.click(target_btn_selector)
+            sb.uc_open_with_reconnect(dynamic_renew_url, 10)
             sb.sleep(5)
             sb.save_screenshot("step5_renew_url_opened.png")
             send_tg_notification("进度日志 📸", "已打开续期跳转链接", "step5_renew_url_opened.png")
@@ -254,7 +253,7 @@ def run_test():
                             break
                 except: pass
 
-            # 【点完 GO 之后的操作】：强制原地等待并刷新
+            # 【新增要求】：点击 GO 之后的操作
             if click_final:
                 logger.info("⌛ [面板监控] 点击 GO 成功，等待 15 秒...")
                 sb.sleep(15)
