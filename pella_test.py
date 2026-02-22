@@ -151,15 +151,27 @@ def run_test():
                     send_tg_notification("保活报告 (冷却中) 🕒", f"按钮尚在冷却。剩余时间: {expiry_before}", "step4_server_dashboard.png")
                     return 
 
-            # --- 第三阶段: 获取动态网址并跳转 ---
-            logger.info("🖱️ [面板监控] 正在从页面抓取动态续期链接...")
-            dynamic_renew_url = sb.get_attribute(target_btn_selector, "href")
-            logger.info(f"🔗 [面板监控] 成功识别续期网址: {dynamic_renew_url}")
+            # --- 第三阶段: 点击按钮进入续期网站 ---
+            logger.info("🖱️ [面板监控] 正在点击续期按钮进入续期网站...")
             
-            sb.uc_open_with_reconnect(dynamic_renew_url, 10)
-            sb.sleep(5)
+            # 获取当前窗口句柄，以便点击后切换
+            original_window = sb.driver.current_window_handle
+            
+            # 执行点击进入续期网站 (此处按照你的要求改成了点击 a 标签进入)
+            if sb.is_element_visible(target_btn_selector):
+                sb.js_click(target_btn_selector)
+                sb.sleep(5)
+                
+                # 处理 target="_blank" 打开的新窗口
+                if len(sb.driver.window_handles) > 1:
+                    for handle in sb.driver.window_handles:
+                        if handle != original_window:
+                            sb.driver.switch_to.window(handle)
+                            logger.info("🌐 [面板监控] 已通过点击切换至续期跳转新页面")
+                            break
+
             sb.save_screenshot("step5_renew_url_opened.png")
-            send_tg_notification("进度日志 📸", "已打开续期跳转链接", "step5_renew_url_opened.png")
+            send_tg_notification("进度日志 📸", "已通过点击进入续期页面", "step5_renew_url_opened.png")
 
             logger.info("🖱️ [面板监控] 执行第一个 Continue 强力点击...")
             for i in range(5):
@@ -167,8 +179,9 @@ def run_test():
                     if sb.is_element_visible('button#submit-button[data-ref="first"]'):
                         sb.js_click('button#submit-button[data-ref="first"]')
                         sb.sleep(3)
-                        if len(sb.driver.window_handles) > 1:
-                            sb.driver.switch_to.window(sb.driver.window_handles[0])
+                        # 如果点击后产生了干扰弹窗窗口，保持切回操作页
+                        if len(sb.driver.window_handles) > 2:
+                             sb.driver.switch_to.window(sb.driver.window_handles[-1])
                         if not sb.is_element_visible('button#submit-button[data-ref="first"]'):
                             break
                 except: pass
@@ -253,7 +266,7 @@ def run_test():
                             break
                 except: pass
 
-            # 【新增要求】：点击 GO 之后的操作
+            # --- 点击 GO 之后的操作 ---
             if click_final:
                 logger.info("⌛ [面板监控] 点击 GO 成功，等待 15 秒...")
                 sb.sleep(15)
