@@ -97,6 +97,10 @@ def run_test():
             logger.info("🔍 [面板监控] 正在扫描网页中的服务器 UUID...")
             sb.wait_for_element_visible('a[href^="/server/"]', timeout=20)
             server_link = sb.get_attribute('a[href^="/server/"]', "href")
+            # 提取 UUID 用于后续跳转
+            uuid_match = re.search(r'/server/([a-z0-9]+)', server_link)
+            extracted_uuid = uuid_match.group(1) if uuid_match else ""
+            
             # 如果是相对路径则补全
             if server_link.startswith("/"):
                 target_server_url = f"https://www.pella.app{server_link}"
@@ -248,6 +252,24 @@ def run_test():
                             send_tg_notification("进度日志 📸", "成功点击最终 Go 按钮", "step9_final_clicked.png")
                             break
                 except: pass
+
+            # 【新增要求】：点击 GO 之后的操作
+            if click_final:
+                logger.info("⌛ [面板监控] 点击 GO 成功，等待 15 秒...")
+                sb.sleep(15)
+                
+                # 拼接动态 UUID 跳转链接
+                renew_final_url = f"https://www.pella.app/renew/{extracted_uuid}"
+                logger.info(f"🚀 [面板监控] 正在跳转至最终续期确认页: {renew_final_url}")
+                sb.uc_open_with_reconnect(renew_final_url, 10)
+                
+                # 循环刷新 3 次，每次间隔 5 秒
+                for r in range(3):
+                    sb.sleep(5)
+                    logger.info(f"🔄 [面板监控] 正在执行第 {r+1} 次刷新...")
+                    sb.refresh_page()
+                    sb.save_screenshot(f"refresh_step_{r+1}.png")
+                    send_tg_notification("进度日志 📸", f"执行第 {r+1} 次刷新确认", f"refresh_step_{r+1}.png")
             
             # --- 第七阶段: 结果验证 ---
             logger.info("🏁 [面板监控] 操作完成，正在回访 Pella 验证续期结果...")
