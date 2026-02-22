@@ -157,7 +157,7 @@ def run_test():
             # 获取当前窗口句柄，以便点击后切换
             original_window = sb.driver.current_window_handle
             
-            # 执行点击进入续期网站 (此处按照你的要求改成了点击 a 标签进入)
+            # 执行点击进入续期网站
             if sb.is_element_visible(target_btn_selector):
                 sb.js_click(target_btn_selector)
                 sb.sleep(5)
@@ -177,6 +177,10 @@ def run_test():
             for i in range(5):
                 try:
                     if sb.is_element_visible('button#submit-button[data-ref="first"]'):
+                        # 新增截图取证
+                        sb.save_screenshot("action_click_first_continue.png")
+                        send_tg_notification("动作日志 📸", f"正在尝试第 {i+1} 次点击第一个 Continue", "action_click_first_continue.png")
+                        
                         sb.js_click('button#submit-button[data-ref="first"]')
                         sb.sleep(3)
                         # 如果点击后产生了干扰弹窗窗口，保持切回操作页
@@ -255,6 +259,11 @@ def run_test():
                         main_window = sb.driver.current_window_handle
                         
                         logger.info(f"🖱️ [面板监控] 第 {i+1} 次点击最终 Go 按钮...")
+                        
+                        # 新增截图取证
+                        sb.save_screenshot(f"action_click_final_go_{i+1}.png")
+                        send_tg_notification("动作日志 📸", f"正在尝试第 {i+1} 次点击最终 Go 按钮", f"action_click_final_go_{i+1}.png")
+                        
                         sb.js_click(final_btn)
                         sb.sleep(5)
                         
@@ -266,7 +275,7 @@ def run_test():
                                     sb.driver.close()
                             sb.driver.switch_to.window(main_window)
                         
-                        # 监测主窗口是否正在发生自动重定向（Cuty 会自动跳回 Pella）
+                        # 监测主窗口是否正在发生自动重定向
                         success_redirect = False
                         for _ in range(25):
                             if "pella.app/renew/" in sb.get_current_url():
