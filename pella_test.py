@@ -66,7 +66,6 @@ def run_test():
     app_pw = "rmbfwtttsecnxhog"
     
     with SB(uc=True, xvfb=True) as sb:
-        # 记录初始窗口句柄，确保万无一失
         main_window = sb.driver.current_window_handle
         
         try:
@@ -100,8 +99,7 @@ def run_test():
             logger.info("🔍 [面板监控] 正在扫描网页中的服务器 UUID...")
             sb.wait_for_element_visible('a[href^="/server/"]', timeout=20)
             server_link = sb.get_attribute('a[href^="/server/"]', "href")
-            
-            # 提取 UUID 用于验证跳转
+            # 提取 UUID 用于后续跳转
             uuid_match = re.search(r'/server/([a-z0-9]+)', server_link)
             extracted_uuid = uuid_match.group(1) if uuid_match else ""
             
@@ -144,20 +142,20 @@ def run_test():
             expiry_before = get_expiry_time_raw(sb)
             logger.info(f"🕒 [面板监控] 续期前剩余时间: {expiry_before}")
 
+            # --- 核心修正：执行真实物理点击以触发后端 Session ---
             target_btn_selector = 'a[href*="cuty.io"]'
-            
             if sb.is_element_visible(target_btn_selector):
-                logger.info("🖱️ [面板监控] 发现续期按钮，准备执行点击...")
-
-            # --- 第三阶段: 获取动态网址并跳转 ---
-            logger.info("🖱️ [面板监控] 正在从页面抓取动态续期链接...")
-            dynamic_renew_url = sb.get_attribute(target_btn_selector, "href")
-            logger.info(f"🔗 [面板监控] 成功识别续期网址: {dynamic_renew_url}")
-            
-            sb.uc_open_with_reconnect(dynamic_renew_url, 10)
-            sb.sleep(5)
-            sb.save_screenshot("step5_renew_url_opened.png")
-            send_tg_notification("进度日志 📸", "已打开续期跳转链接", "step5_renew_url_opened.png")
+                logger.info("🖱️ [面板监控] 正在执行真实物理点击触发续期...")
+                sb.click(target_btn_selector)
+                sb.sleep(5)
+                # 确保进入 Cuty.io 页面并处理可能产生的广告标签
+                if len(sb.driver.window_handles) > 1:
+                    for handle in sb.driver.window_handles:
+                        sb.driver.switch_to.window(handle)
+                        if "cuty.io" in sb.driver.current_url:
+                            break
+                sb.save_screenshot("step5_renew_clicked.png")
+                send_tg_notification("进度日志 📸", "已通过物理点击进入续期跳转页", "step5_renew_clicked.png")
 
             logger.info("🖱️ [面板监控] 执行第一个 Continue 强力点击...")
             for i in range(5):
@@ -166,7 +164,7 @@ def run_test():
                         sb.js_click('button#submit-button[data-ref="first"]')
                         sb.sleep(3)
                         if len(sb.driver.window_handles) > 1:
-                            sb.driver.switch_to.window(main_window)
+                            sb.driver.switch_to.window(sb.driver.window_handles[0])
                         if not sb.is_element_visible('button#submit-button[data-ref="first"]'):
                             break
                 except: pass
@@ -210,9 +208,13 @@ def run_test():
                         sb.js_click(captcha_btn)
                         logger.info(f"🖱️ [面板监控] 点击 'I am not a robot' 第 {i+1} 次")
                         sb.sleep(3)
-                        # 核心修正：点击后立即明确强制切回主窗口
                         if len(sb.driver.window_handles) > 1:
-                            sb.driver.switch_to.window(main_window)
+                            curr = sb.driver.current_window_handle
+                            for handle in sb.driver.window_handles:
+                                if handle != curr:
+                                    sb.driver.switch_to.window(handle)
+                                    sb.driver.close()
+                            sb.driver.switch_to.window(sb.driver.window_handles[0])
                         if not sb.is_element_visible(captcha_btn):
                             sb.save_screenshot("step7_robot_clicked.png")
                             send_tg_notification("进度日志 📸", "成功点击 Robot 按钮", "step7_robot_clicked.png")
@@ -234,7 +236,7 @@ def run_test():
                         logger.info(f"🖱️ [面板监控] 第 {i+1} 次点击最终 Go 按钮...")
                         sb.js_click(final_btn)
                         sb.sleep(3)
-                        # 核心修正：点完 GO 立即切回原标签页，不让焦点跑偏
+                        # 点完立即回原窗口确保焦点
                         if len(sb.driver.window_handles) > 1:
                             sb.driver.switch_to.window(main_window)
                         
@@ -245,14 +247,12 @@ def run_test():
                             break
                 except: pass
 
-            # 【修正逻辑】：点击 GO 之后，在原标签页执行 15 秒等待和刷新
+            # 点击 GO 之后原地等待并刷新确认
             if click_final:
-                # 再次强调切换回原窗口
                 sb.driver.switch_to.window(main_window)
                 logger.info("⌛ [面板监控] 点击 GO 成功，原标签页原地等待 15 秒...")
                 sb.sleep(15)
                 
-                # 在原标签页执行 3 次刷新
                 for r in range(3):
                     sb.sleep(5)
                     logger.info(f"🔄 [面板监控] 原标签页正在执行第 {r+1} 次刷新...")
@@ -278,7 +278,7 @@ def run_test():
         except Exception as e:
             logger.error(f"🔥 [面板监控] 流程崩溃: {str(e)}")
             sb.save_screenshot("error.png")
-            send_tg_notification("保活报告 ❌", f"错误详情: `{str(e)}`", "error.png")
+            send_tg_notification("保活失败 ❌", f"错误详情: `{str(e)}`", "error.png")
             raise e
 
 if __name__ == "__main__":
