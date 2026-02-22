@@ -96,15 +96,13 @@ def run_test():
             sb.save_screenshot("step3_after_otp.png")
             send_tg_notification("进度日志 📸", "已提交验证码", "step3_after_otp.png")
             
-            # 【动态扫描 UUID】: 登录后在主页寻找服务器链接
+            # 【动态扫描 UUID】
             logger.info("🔍 [面板监控] 正在扫描网页中的服务器 UUID...")
             sb.wait_for_element_visible('a[href^="/server/"]', timeout=20)
             server_link = sb.get_attribute('a[href^="/server/"]', "href")
-            # 提取 UUID 用于后续跳转验证
             uuid_match = re.search(r'/server/([a-z0-9]+)', server_link)
             extracted_uuid = uuid_match.group(1) if uuid_match else ""
             
-            # 如果是相对路径则补全
             if server_link.startswith("/"):
                 target_server_url = f"https://www.pella.app{server_link}"
             else:
@@ -112,14 +110,13 @@ def run_test():
             
             logger.info(f"✅ [面板监控] 自动识别到服务器地址: {target_server_url}")
             sb.save_screenshot("step3_after_login_scan.png")
-            send_tg_notification("进度日志 📸", f"登录成功，自动扫到服务器: {target_server_url}", "step3_after_login_scan.png")
+            send_tg_notification("进度日志 📸", f"登录成功，扫到服务器: {target_server_url}", "step3_after_login_scan.png")
 
             # --- 第二阶段: 检查 Pella 状态 ---
             logger.info("🔍 [面板监控] 正在进入识别到的服务器面板...")
             sb.uc_open_with_reconnect(target_server_url, 10)
             sb.sleep(10) 
             sb.save_screenshot("step4_server_dashboard.png")
-            send_tg_notification("进度日志 📸", "已进入服务器控制面板", "step4_server_dashboard.png")
             
             def get_expiry_time_raw(sb_obj):
                 try:
@@ -143,30 +140,18 @@ def run_test():
             expiry_before = get_expiry_time_raw(sb)
             logger.info(f"🕒 [面板监控] 续期前剩余时间: {expiry_before}")
 
+            # --- 物理点击进入续期页 ---
             target_btn_selector = 'a[href*="cuty.io"]'
-            
             if sb.is_element_visible(target_btn_selector):
-                btn_class = sb.get_attribute(target_btn_selector, "class")
-                is_cooling = "opacity-50" in btn_class and "disabled:opacity-50" not in btn_class
-                
-                if is_cooling or "pointer-events-none" in btn_class:
-                    logger.warning("🕒 [面板监控] 按钮处于冷却中，任务结束。")
-                    send_tg_notification("保活报告 (冷却中) 🕒", f"按钮尚在冷却。剩余时间: {expiry_before}", "step4_server_dashboard.png")
-                    return 
-
-            # --- 第三阶段: 执行物理点击触发后端 Session ---
-            logger.info("🖱️ [面板监控] 正在通过物理点击触发续期链接以产生握手握手...")
-            # 改为点击而非直接跳转 URL
-            sb.click(target_btn_selector)
-            sb.sleep(5)
-            # 确保切焦点到 Cuty.io 标签页
-            if len(sb.driver.window_handles) > 1:
-                for handle in sb.driver.window_handles:
-                    sb.driver.switch_to.window(handle)
-                    if "cuty.io" in sb.driver.current_url:
-                        break
-            sb.save_screenshot("step5_renew_url_opened.png")
-            send_tg_notification("进度日志 📸", "已通过物理点击进入续期页面", "step5_renew_url_opened.png")
+                logger.info("🖱️ [面板监控] 正在执行物理点击触发续期...")
+                sb.click(target_btn_selector)
+                sb.sleep(5)
+                if len(sb.driver.window_handles) > 1:
+                    for handle in sb.driver.window_handles:
+                        sb.driver.switch_to.window(handle)
+                        if "cuty.io" in sb.driver.current_url: break
+                sb.save_screenshot("step5_renew_clicked.png")
+                send_tg_notification("进度日志 📸", "已通过真实点击进入续期页", "step5_renew_clicked.png")
 
             logger.info("🖱️ [面板监控] 执行第一个 Continue 强力点击...")
             for i in range(5):
@@ -176,11 +161,10 @@ def run_test():
                         sb.sleep(3)
                         if len(sb.driver.window_handles) > 1:
                             sb.driver.switch_to.window(sb.driver.window_handles[0])
-                        if not sb.is_element_visible('button#submit-button[data-ref="first"]'):
-                            break
+                        if not sb.is_element_visible('button#submit-button[data-ref="first"]'): break
                 except: pass
 
-            # --- 第四阶段: 处理 Cloudflare 人机挑战 ---
+            # --- 第四阶段: 处理 Cloudflare 人机挑战 (加入有效 Kata 穿透逻辑) ---
             logger.info("🛡️ [面板监控] 检测人机验证中...")
             sb.sleep(5)
             try:
@@ -192,7 +176,7 @@ def run_test():
                     sb.switch_to_parent_frame()
                     sb.sleep(6)
                     sb.save_screenshot("step6_after_cf.png")
-                    send_tg_notification("进度日志 📸", "已尝试点击 CF 验证", "step6_after_cf.png")
+                    send_tg_notification("进度日志 📸", "已通过 Kata 模式穿透 CF 验证", "step6_after_cf.png")
                 else:
                     sb.uc_gui_click_captcha()
             except: pass
@@ -232,11 +216,10 @@ def run_test():
                             break
                 except: pass
 
-            # --- 第六阶段: 等待 18 秒计时并点击最终 Go 按钮 ---
+            # --- 第六阶段: 等待与最终 Go 按钮 ---
             logger.info("⌛ [面板监控] 等待 18 秒计时结束...")
             sb.sleep(18)
             sb.save_screenshot("step8_wait_timer.png")
-            send_tg_notification("进度日志 📸", "18秒倒计时结束，准备点击最终按钮", "step8_wait_timer.png")
             
             final_btn = 'button#submit-button[data-ref="show"]'
             click_final = False
@@ -248,11 +231,7 @@ def run_test():
                         sb.js_click(final_btn)
                         sb.sleep(3)
                         if len(sb.driver.window_handles) > 1:
-                            curr = sb.driver.current_window_handle
-                            for h in sb.driver.window_handles:
-                                if h != curr: sb.driver.switch_to.window(h); sb.driver.close()
-                            sb.driver.switch_to.window(sb.driver.window_handles[0])
-                        
+                            sb.driver.switch_to.window(main_window)
                         if not sb.is_element_visible(final_btn):
                             click_final = True
                             sb.save_screenshot("step9_final_clicked.png")
@@ -260,40 +239,30 @@ def run_test():
                             break
                 except: pass
 
-            # 【点完 GO 之后的等待与刷新逻辑】
+            # 点完 GO 之后原地等待并刷新
             if click_final:
-                # 强制回切到主窗口确保刷新作用域正确
                 sb.driver.switch_to.window(main_window)
-                logger.info("⌛ [面板监控] 点击 GO 成功，等待 15 秒同步回调...")
+                logger.info("⌛ [面板监控] 点击成功，原标签页原地等待 15 秒...")
                 sb.sleep(15)
-                
-                # 拼接动态链接跳转确认页
-                renew_final_url = f"https://www.pella.app/renew/{extracted_uuid}"
-                logger.info(f"🚀 [面板监控] 正在跳转至最终确认页: {renew_final_url}")
-                sb.uc_open_with_reconnect(renew_final_url, 10)
-                
-                # 循环刷新 3 次验证结果
                 for r in range(3):
                     sb.sleep(5)
-                    logger.info(f"🔄 [面板监控] 正在执行第 {r+1} 次刷新确认...")
+                    logger.info(f"🔄 [面板监控] 原标签页正在执行第 {r+1} 次刷新...")
                     sb.refresh_page()
                     sb.save_screenshot(f"refresh_step_{r+1}.png")
-                    send_tg_notification("进度日志 📸", f"执行确认页第 {r+1} 次刷新", f"refresh_step_{r+1}.png")
+                    send_tg_notification("进度日志 📸", f"原标签页第 {r+1} 次刷新确认", f"refresh_step_{r+1}.png")
             
             # --- 第七阶段: 结果验证 ---
-            logger.info("🏁 [面板监控] 操作完成，正在回访 Pella 验证续期结果...")
+            logger.info("🏁 [面板监控] 操作完成，正在回访 Pella 验证结果...")
             sb.sleep(5)
             sb.uc_open_with_reconnect(target_server_url, 10)
             sb.sleep(10)
-            
             expiry_after = get_expiry_time_raw(sb)
-            logger.info(f"🕒 [面板监控] 续期后剩余时间: {expiry_after}")
             sb.save_screenshot("final_result.png")
             
             if click_final:
                 send_tg_notification("续期成功 ✅", f"续期前: {expiry_before}\n续期后: {expiry_after}", "final_result.png")
             else:
-                send_tg_notification("操作反馈 ⚠️", f"流程已执行至最后，请检查截图。续期前: {expiry_before}\n当前时间: {expiry_after}", "final_result.png")
+                send_tg_notification("操作反馈 ⚠️", f"流程已执行完毕。续期前: {expiry_before}\n当前时间: {expiry_after}", "final_result.png")
 
         except Exception as e:
             logger.error(f"🔥 [面板监控] 流程崩溃: {str(e)}")
