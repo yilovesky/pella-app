@@ -155,19 +155,24 @@ def run_test():
                     return 
 
             # --- 第三阶段: 获取动态网址并跳转 ---
-            logger.info("🖱️ [面板监控] 正在从页面抓取动态续期链接...")
-            dynamic_renew_url = sb.get_attribute(target_btn_selector, "href")
-            logger.info(f"🔗 [面板监控] 成功识别续期网址: {dynamic_renew_url}")
-            
+            logger.info("🖱️ [面板监控] 正在物理点击续期按钮以产生握手信号...")
             # 【逻辑搬运】：在新标签页打开，保持主页面不动
             main_handle = sb.driver.current_window_handle
-            sb.execute_script(f"window.open('{dynamic_renew_url}');")
-            sb.sleep(2)
-            sb.driver.switch_to.window(sb.driver.window_handles[-1])
             
+            # 执行物理点击
+            sb.click(target_btn_selector)
             sb.sleep(5)
+            
+            # 切焦点到弹出的续期窗口
+            if len(sb.driver.window_handles) > 1:
+                for handle in sb.driver.window_handles:
+                    if handle != main_handle:
+                        sb.driver.switch_to.window(handle)
+                        if "cuty.io" in sb.driver.current_url:
+                            break
+            
             sb.save_screenshot("step5_renew_url_opened.png")
-            send_tg_notification("进度日志 📸", "已在新标签页打开续期链接", "step5_renew_url_opened.png")
+            send_tg_notification("进度日志 📸", "已通过点击进入续期页", "step5_renew_url_opened.png")
 
             logger.info("🖱️ [面板监控] 执行第一个 Continue 强力点击...")
             for i in range(5):
@@ -177,7 +182,11 @@ def run_test():
                         sb.sleep(3)
                         # 确保不被弹窗带走
                         if len(sb.driver.window_handles) > 2:
-                            sb.driver.switch_to.window(sb.driver.window_handles[-1])
+                            curr = sb.driver.current_window_handle
+                            for handle in sb.driver.window_handles:
+                                if handle != main_handle and handle != curr:
+                                    sb.driver.switch_to.window(handle); sb.driver.close()
+                            sb.driver.switch_to.window(curr)
                         if not sb.is_element_visible('button#submit-button[data-ref="first"]'):
                             break
                 except: pass
