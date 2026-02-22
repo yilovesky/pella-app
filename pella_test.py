@@ -140,7 +140,6 @@ def run_test():
             expiry_before = get_expiry_time_raw(sb)
             logger.info(f"🕒 [面板监控] 续期前剩余时间: {expiry_before}")
 
-            # 精准选择续期按钮
             target_btn_selector = 'a[href*="cuty.io"]'
             
             if sb.is_element_visible(target_btn_selector):
@@ -152,13 +151,16 @@ def run_test():
                     send_tg_notification("保活报告 (冷却中) 🕒", f"按钮尚在冷却。剩余时间: {expiry_before}", "step4_server_dashboard.png")
                     return 
 
-            # --- 第三阶段: 物理点击触发续期 ---
-            logger.info("🖱️ [面板监控] 正在物理点击续期按钮以产生握手信号...")
-            # 【这里是唯一的修改处】：改为点击元素进入续期网站，确保激活后端 Session
+            # --- 第三阶段: 获取动态网址并跳转 ---
+            logger.info("🖱️ [面板监控] 正在从页面抓取动态续期链接...")
+            dynamic_renew_url = sb.get_attribute(target_btn_selector, "href")
+            logger.info(f"🔗 [面板监控] 成功识别续期网址: {dynamic_renew_url}")
+            
+            # 【这是唯一的改动点：改为点击方式】
             sb.click(target_btn_selector)
             sb.sleep(5)
             sb.save_screenshot("step5_renew_url_opened.png")
-            send_tg_notification("进度日志 📸", "已通过点击进入续期跳转页面", "step5_renew_url_opened.png")
+            send_tg_notification("进度日志 📸", "已打开续期跳转链接", "step5_renew_url_opened.png")
 
             logger.info("🖱️ [面板监控] 执行第一个 Continue 强力点击...")
             for i in range(5):
@@ -252,15 +254,17 @@ def run_test():
                             break
                 except: pass
 
-            # 点击成功后的同步加时确认
+            # 【新增要求】：点击 GO 之后的操作
             if click_final:
                 logger.info("⌛ [面板监控] 点击 GO 成功，等待 15 秒...")
                 sb.sleep(15)
                 
+                # 拼接动态 UUID 跳转链接
                 renew_final_url = f"https://www.pella.app/renew/{extracted_uuid}"
                 logger.info(f"🚀 [面板监控] 正在跳转至最终续期确认页: {renew_final_url}")
                 sb.uc_open_with_reconnect(renew_final_url, 10)
                 
+                # 循环刷新 3 次，每次间隔 5 秒
                 for r in range(3):
                     sb.sleep(5)
                     logger.info(f"🔄 [面板监控] 正在执行第 {r+1} 次刷新...")
