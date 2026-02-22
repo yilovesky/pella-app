@@ -129,8 +129,6 @@ def run_test():
             
             if sb.is_element_visible(target_btn_selector):
                 btn_class = sb.get_attribute(target_btn_selector, "class")
-                # 【关键修正】：使用更严格的过滤逻辑，排除掉包含 'disabled:' 的干扰项
-                # 只有当按钮 class 包含 'opacity-50' 且不带 'disabled:' 前缀时，才认为是冷却中
                 is_cooling = "opacity-50" in btn_class and "disabled:opacity-50" not in btn_class
                 
                 if is_cooling or "pointer-events-none" in btn_class:
@@ -147,6 +145,22 @@ def run_test():
             sb.sleep(5)
             sb.save_screenshot("step5_renew_url_opened.png")
             send_tg_notification("进度日志 📸", "已打开续期跳转链接", "step5_renew_url_opened.png")
+
+            # --- 新增/补回：执行第一个 Continue 强力点击 ---
+            logger.info("🖱️ [面板监控] 执行第一个 Continue 强力点击...")
+            for i in range(5):
+                try:
+                    if sb.is_element_visible('button#submit-button[data-ref="first"]'):
+                        sb.js_click('button#submit-button[data-ref="first"]')
+                        logger.info(f"🖱️ [面板监控] 点击 'Continue' (first) 第 {i+1} 次")
+                        sb.sleep(3)
+                        if len(sb.driver.window_handles) > 1:
+                            sb.driver.switch_to.window(sb.driver.window_handles[0])
+                        if not sb.is_element_visible('button#submit-button[data-ref="first"]'):
+                            sb.save_screenshot("step5_5_first_continue_done.png")
+                            send_tg_notification("进度日志 📸", "已完成第一个 Continue 点击", "step5_5_first_continue_done.png")
+                            break
+                except: pass
 
             # --- 第四阶段: 处理 Cloudflare 人机挑战 ---
             logger.info("🛡️ [面板监控] 检测人机验证中...")
@@ -165,27 +179,12 @@ def run_test():
                     sb.uc_gui_click_captcha()
             except: pass
 
-            # 【新增逻辑】：清理阻碍点击的广告弹窗
-            def clean_ads(sb_obj):
-                try:
-                    # 移除 ID 以 div_netpub_ins_ 开头的广告容器
-                    js_cleanup = """
-                    var ads = document.querySelectorAll('div[id^="div_netpub_ins_"]');
-                    ads.forEach(function(ad) { ad.remove(); });
-                    var iframes = document.querySelectorAll('iframe[id^="adg-"]');
-                    iframes.forEach(function(f) { f.remove(); });
-                    document.body.style.overflow = 'auto';
-                    """
-                    sb_obj.execute_script(js_cleanup)
-                except: pass
-
             # --- 第五阶段: 强力点击 "I am not a robot" ---
             logger.info("🖱️ [面板监控] 开始点击 'I am not a robot' (data-ref='captcha')...")
             captcha_btn = 'button#submit-button[data-ref="captcha"]'
             for i in range(8): 
                 try:
                     if sb.is_element_visible(captcha_btn):
-                        clean_ads(sb) # 点击前清理广告
                         sb.js_click(captcha_btn)
                         logger.info(f"🖱️ [面板监控] 点击 'I am not a robot' 第 {i+1} 次")
                         sb.sleep(3)
@@ -202,7 +201,7 @@ def run_test():
                             break
                 except: pass
 
-            # --- 第六阶段: 等待 18 秒计时并点击最终 Go 按钮 ---
+            # --- 第六阶段: 等待 计时并点击最终 Go 按钮 ---
             logger.info("⌛ [面板监控] 等待 18 秒计时结束...")
             sb.sleep(18)
             sb.save_screenshot("step8_wait_timer.png")
@@ -213,7 +212,6 @@ def run_test():
             for i in range(8):
                 try:
                     if sb.is_element_visible(final_btn):
-                        clean_ads(sb) # 点击前清理广告
                         logger.info(f"🖱️ [面板监控] 第 {i+1} 次点击最终 Go 按钮...")
                         sb.js_click(final_btn)
                         sb.sleep(3)
